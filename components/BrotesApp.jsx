@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 // ---- Design tokens ----
 const C = {
@@ -467,8 +468,58 @@ export default function BrotesApp() {
   const [isSaved, setIsSaved] = useState(false);
 
   const [garden, setGarden] = useState([]);
+  const [userId, setUserId] = useState(null);
+  const [loadingGarden, setLoadingGarden] = useState(true);
+  const [capturedFile, setCapturedFile] = useState(null);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
+
+  function rowToPlant(row) {
+    return {
+      id: row.id,
+      nombre_comun: row.nombre_comun,
+      nombre_cientifico: row.nombre_cientifico,
+      confianza: row.confianza,
+      estado_general: row.estado_general,
+      riego: row.riego,
+      luz: row.luz,
+      problemas_detectados: row.problemas_detectados || [],
+      consejos: row.consejos || [],
+      imageUrl: row.image_url,
+      history: row.historial || [],
+    };
+  }
+
+  async function loadGarden(uid) {
+    const { data, error } = await supabase
+      .from("plantas")
+      .select("*")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: true });
+    if (!error && data) setGarden(data.map(rowToPlant));
+  }
+
+  useEffect(() => {
+    async function initAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+      let activeSession = session;
+      if (!activeSession) {
+        const { data, error } = await supabase.auth.signInAnonymously();
+        if (error) {
+          console.error("Error de sesión anónima:", error);
+          setLoadingGarden(false);
+          return;
+        }
+        activeSession = data.session;
+      }
+      if (activeSession) {
+        setUserId(activeSession.user.id);
+        await loadGarden(activeSession.user.id);
+      }
+      setLoadingGarden(false);
+    }
+    initAuth();
+  }, []);
 
   // community posting
   const [posts, setPosts] = useState(MOCK_POSTS);
@@ -535,6 +586,7 @@ export default function BrotesApp() {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
+    setCapturedFile(file);
     const url = URL.createObjectURL(file);
     setImageUrl(url);
     setScreen("analyzing");
@@ -562,30 +614,71 @@ export default function BrotesApp() {
     }
   }
 
-  function handleSaveResult() {
-    if (!result) return;
-    if (captureMode === "followup" && followupPlantId) {
-      setGarden((prev) =>
-        prev.map((p) =>
-          p.id === followupPlantId
-            ? {
-                ...p,
-                ...result,
-                imageUrl,
-                history: [...p.history, { date: new Date().toLocaleDateString("es-MX"), imageUrl, estado_general: result.estado_general }],
-              }
-            : p
-        )
-      );
-    } else {
-      const newPlant = {
-        ...result,
-        imageUrl,
-        id: Date.now(),
-        history: [{ date: new Date().toLocaleDateString("es-MX"), imageUrl, estado_general: result.estado_general }],
-      };
-      setGarden((prev) => [...prev, newPlant]);
+  async function handleSaveResult() {
+    if (!result || !userId) return;
+
+    // Sube la foto real a Supabase Storage para que no se pierda al recargar
+    // (antes de esto, la imagen solo vivía como blob: temporal del navegador)
+    let publicUrl = imageUrl;
+    if (capturedFile) {
+      const path = `${userId}/${Date.now()}-${capturedFile.name}`;
+      const { error: uploadError } = await supabase.storage.from("plant-photos").upload(path, capturedFile);
+      if (!uploadError) {
+        const { data } = supabase.storage.from("plant-photos").getPublicUrl(path);
+        publicUrl = data.publicUrl;
+      } else {
+        console.error("Error subiendo foto:", uploadError);
+      }
     }
+
+    const historyEntry = { date: new Date().toLocaleDateString("es-MX"), imageUrl: publicUrl, estado_general: result.estado_general };
+
+    if (captureMode === "followup" && followupPlantId) {
+      const plant = garden.find((p) => p.id === followupPlantId);
+      const newHistory = [...(plant?.history || []), historyEntry];
+      const { error } = await supabase
+        .from("plantas")
+        .update({
+          nombre_comun: result.nombre_comun,
+          nombre_cientifico: result.nombre_cientifico,
+          confianza: result.confianza,
+          estado_general: result.estado_general,
+          riego: result.riego,
+          luz: result.luz,
+          problemas_detectados: result.problemas_detectados,
+          consejos: result.consejos,
+          image_url: publicUrl,
+          historial: newHistory,
+        })
+        .eq("id", followupPlantId);
+      if (!error) {
+        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...result, imageUrl: publicUrl, history: newHistory } : p)));
+      } else {
+        console.error("Error actualizando planta:", error);
+      }
+    } else {
+      const newId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+      const { error } = await supabase.from("plantas").insert({
+        id: newId,
+        user_id: userId,
+        nombre_comun: result.nombre_comun,
+        nombre_cientifico: result.nombre_cientifico,
+        confianza: result.confianza,
+        estado_general: result.estado_general,
+        riego: result.riego,
+        luz: result.luz,
+        problemas_detectados: result.problemas_detectados,
+        consejos: result.consejos,
+        image_url: publicUrl,
+        historial: [historyEntry],
+      });
+      if (!error) {
+        setGarden((prev) => [...prev, { ...result, id: newId, imageUrl: publicUrl, history: [historyEntry] }]);
+      } else {
+        console.error("Error guardando planta:", error);
+      }
+    }
+    setImageUrl(publicUrl);
     setIsSaved(true);
   }
 
@@ -826,7 +919,11 @@ export default function BrotesApp() {
               )}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 20px" }}>
-              {garden.length === 0 ? (
+              {loadingGarden ? (
+                <p style={{ textAlign: "center", padding: "60px 0", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.mossSoft }}>
+                  Cargando tu jardín...
+                </p>
+              ) : garden.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "60px 20px" }}>
                   <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 16, color: "#6b6552" }}>
                     Aún no tienes plantas guardadas.
@@ -843,9 +940,11 @@ export default function BrotesApp() {
                   {garden.map((p) => (
                     <div key={p.id} onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
                           setGarden((prev) => prev.filter((x) => x.id !== p.id));
+                          const { error } = await supabase.from("plantas").delete().eq("id", p.id);
+                          if (error) console.error("Error borrando planta:", error);
                         }}
                         style={{ position: "absolute", top: 6, right: 6, zIndex: 2, background: "rgba(20,38,29,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", cursor: "pointer" }}
                       >

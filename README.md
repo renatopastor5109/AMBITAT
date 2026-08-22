@@ -1,4 +1,4 @@
-# ambitat
+# Brotes
 
 App de identificación y cuidado de plantas.
 

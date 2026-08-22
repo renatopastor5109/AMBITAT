@@ -50,31 +50,6 @@ function Tag({ children, color }) {
   );
 }
 
-// ---------- Botanical illustration for post thumbnails (no real photos) ----------
-function LeafArt({ variant = 0, size = 200 }) {
-  const palettes = [
-    [C.moss, C.deep2, C.amber],
-    [C.clay, C.deep, C.moss],
-    [C.deep2, C.mossSoft, C.rust],
-    [C.moss, C.clay, C.deep],
-  ];
-  const p = palettes[variant % palettes.length];
-  return (
-    <svg viewBox="0 0 200 200" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
-      <rect width="200" height="200" fill={p[1]} />
-      <ellipse cx={60 + (variant % 3) * 20} cy="120" rx="70" ry="90" fill={p[0]} opacity="0.9" />
-      <ellipse cx={150} cy={70} rx="55" ry="75" fill={p[2]} opacity="0.55" />
-      <path
-        d={`M100 200 C100 140 ${70 + variant * 6} 100 90 40`}
-        stroke={C.parchment}
-        strokeWidth="3"
-        fill="none"
-        opacity="0.35"
-      />
-    </svg>
-  );
-}
-
 // ---------- Plant specimen card ----------
 function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
   const estado = ESTADO_STYLES[data.estado_general] || ESTADO_STYLES.regular;
@@ -249,12 +224,6 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
 
 // ---------- Icons ----------
 const Icon = {
-  Home: (p) => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M4 11.5L12 5l8 6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M6 10v9a1 1 0 001 1h10a1 1 0 001-1v-9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
   Camera: (p) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
       <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="currentColor" strokeWidth="1.7" />
@@ -265,17 +234,6 @@ const Icon = {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" {...p}>
       <path d="M4 20c8-1 13-6 13-15 0 0-11 0-13 8-1 4 0 7 0 7z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
       <path d="M4 20c2-6 5-9 9-11" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  ),
-  Menu: (p) => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  ),
-  User: (p) => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" {...p}>
-      <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   ),
   Back: (p) => (
@@ -295,84 +253,10 @@ const Icon = {
       <path d="M5 5l14 14M19 5L5 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   ),
-  Share: (p) => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M5 12v6a1 1 0 001 1h12a1 1 0 001-1v-6M12 15V3M8 7l4-4 4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  Plus: (p) => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
-    </svg>
-  ),
-  Cart: (p) => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M3 4h2l2.2 11.2a1.5 1.5 0 001.5 1.3h8.1a1.5 1.5 0 001.5-1.2L20 8H6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="9.5" cy="20" r="1.3" fill="currentColor" />
-      <circle cx="17" cy="20" r="1.3" fill="currentColor" />
-    </svg>
-  ),
-  Calendar: (p) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" {...p}>
-      <rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  ),
-  Check: (p) => (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" {...p}>
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M8 12.5l2.5 2.5L16 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-  Minus: (p) => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M5 12h14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
-    </svg>
-  ),
 };
 
-// ---------- Mock community data ----------
-const MOCK_POSTS = [
-  { id: 1, autor: "Vivero Raíces", tipo: "Tienda", variant: 0, likes: 128,
-    caption: "Llegó nueva remesa de suculentas de temporada. Ideales para quienes están empezando su colección: resisten el olvido ocasional de riego." },
-  { id: 2, autor: "Mariana G.", tipo: "Usuario", variant: 1, likes: 54,
-    caption: "Mi monstera por fin sacó su primera hoja fenestrada después de 3 meses. La paciencia con las plantas de interior rinde frutos." },
-  { id: 3, autor: "Jardín Urbano MX", tipo: "Tienda", variant: 2, likes: 212,
-    caption: "Tip del mes: si las puntas de las hojas se ponen cafés, casi siempre es por el cloro del agua de la llave. Déjala reposar 24h antes de regar." },
-  { id: 4, autor: "Diego R.", tipo: "Usuario", variant: 3, likes: 39,
-    caption: "Rescaté este potos de la sección de descuentos, todo marchito. Tres semanas después y ya tiene hojas nuevas por todos lados." },
-  { id: 5, autor: "Terrario Co.", tipo: "Tienda", variant: 1, likes: 97,
-    caption: "Los terrarios cerrados casi se riegan solos: el agua se recicla dentro del vidrio. Perfectos para quien viaja seguido." },
-  { id: 6, autor: "Ana P.", tipo: "Usuario", variant: 0, likes: 61,
-    caption: "Después de meses luchando contra la cochinilla, mi ficus por fin está limpio. Alcohol isopropílico y mucha paciencia." },
-];
-
-// ---------- Mock store catalog ----------
-const PRODUCTS = [
-  { id: "p1", nombre: "Muro Verde Modular 60x60", precio: 1450, variant: 2,
-    descripcion: "Panel modular prearmado con follaje mixto natural, ideal para fachadas exteriores. Incluye sistema de riego por goteo." },
-  { id: "p2", nombre: "Jardinera Vertical de Bambú", precio: 890, variant: 1,
-    descripcion: "Estructura de bambú con 12 bolsillos de fieltro para plantas de interior. Fácil de montar en cualquier pared." },
-  { id: "p3", nombre: "Kit Hidropónico Vertical", precio: 2100, variant: 0,
-    descripcion: "Sistema autónomo con bomba de recirculación, pensado para hierbas de cocina y suculentas." },
-  { id: "p4", nombre: "Panel de Suculentas Prearmado", precio: 650, variant: 3,
-    descripcion: "Panel ligero de 40x40cm listo para colgar. Ideal para balcones y espacios pequeños." },
-  { id: "p5", nombre: "Muro Verde Artificial Premium", precio: 1200, variant: 2,
-    descripcion: "Follaje sintético de alta densidad y aspecto realista. Cero mantenimiento de riego." },
-  { id: "p6", nombre: "Torre de Cultivo Vertical", precio: 1780, variant: 1,
-    descripcion: "Torre giratoria de 5 niveles para hierbas y vegetales, aprovecha espacios reducidos." },
-];
-
-const SERVICIOS_MANTENIMIENTO = [
-  "Poda y limpieza general",
-  "Revisión de sistema de riego",
-  "Fertilización",
-  "Diagnóstico de plagas u hongos",
-];
-
-// ---------- Bottom nav ----------
-const TIENDA_SCREENS = ["tienda", "producto", "carrito", "agenda", "agendaConfirm"];
-function BottomNav({ screen, setScreen, gardenCount, cartCount }) {
+// ---------- Bottom nav (solo cámara + jardín por ahora) ----------
+function BottomNav({ screen, setScreen, gardenCount }) {
   const isDark = screen === "camera" || screen === "analyzing" || screen === "result";
   return (
     <div
@@ -380,16 +264,19 @@ function BottomNav({ screen, setScreen, gardenCount, cartCount }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-around",
-        padding: "14px 6px",
+        padding: "14px 10px",
         borderTop: "1px solid " + (isDark ? "#2a3f32" : C.parchmentLine),
         background: isDark ? C.deep : "#fff",
       }}
     >
-      <button onClick={() => setScreen("feed")} style={navBtnStyle(screen === "feed", isDark)}>
-        <Icon.Home />
-      </button>
-      <button onClick={() => setScreen("crear")} style={navBtnStyle(screen === "crear", isDark)}>
-        <Icon.Plus />
+      <button
+        onClick={() => setScreen("jardin")}
+        style={{ ...navBtnStyle(screen === "jardin", isDark), display: "flex", alignItems: "center", gap: 6 }}
+      >
+        <Icon.Leaf />
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13 }}>
+          Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
+        </span>
       </button>
       <button
         onClick={() => setScreen("camera")}
@@ -403,43 +290,6 @@ function BottomNav({ screen, setScreen, gardenCount, cartCount }) {
         }}
       >
         <Icon.Camera />
-      </button>
-      <button
-        onClick={() => setScreen("tienda")}
-        style={{ ...navBtnStyle(TIENDA_SCREENS.includes(screen), isDark), position: "relative" }}
-      >
-        <Icon.Cart />
-        {cartCount > 0 && (
-          <span
-            style={{
-              position: "absolute",
-              top: -2,
-              right: -4,
-              background: C.clay,
-              color: "#fff",
-              fontFamily: "'Inter', sans-serif",
-              fontSize: 9.5,
-              fontWeight: 700,
-              width: 15,
-              height: 15,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {cartCount}
-          </span>
-        )}
-      </button>
-      <button
-        onClick={() => setScreen("jardin")}
-        style={{ ...navBtnStyle(screen === "jardin", isDark), display: "flex", alignItems: "center", gap: 5 }}
-      >
-        <Icon.Leaf />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12 }}>
-          {gardenCount ? `(${gardenCount})` : ""}
-        </span>
       </button>
     </div>
   );
@@ -455,8 +305,7 @@ function navBtnStyle(active, isDark) {
 }
 
 export default function BrotesApp() {
-  const [screen, setScreen] = useState("feed");
-  const [selectedPost, setSelectedPost] = useState(null);
+  const [screen, setScreen] = useState("jardin");
   const [selectedPlant, setSelectedPlant] = useState(null);
 
   // capture flow state
@@ -521,57 +370,6 @@ export default function BrotesApp() {
     initAuth();
   }, []);
 
-  // community posting
-  const [posts, setPosts] = useState(MOCK_POSTS);
-  const [newImageUrl, setNewImageUrl] = useState(null);
-  const [newCaption, setNewCaption] = useState("");
-  const newPostFileRef = useRef(null);
-
-  // store / cart
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [cart, setCart] = useState({}); // { productId: qty }
-  const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
-  const cartTotal = Object.entries(cart).reduce((sum, [id, qty]) => {
-    const prod = PRODUCTS.find((p) => p.id === id);
-    return sum + (prod ? prod.precio * qty : 0);
-  }, 0);
-  function addToCart(id) {
-    setCart((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-  }
-  function changeQty(id, delta) {
-    setCart((prev) => {
-      const next = { ...prev };
-      const qty = (next[id] || 0) + delta;
-      if (qty <= 0) delete next[id];
-      else next[id] = qty;
-      return next;
-    });
-  }
-
-  // maintenance scheduling
-  const [agendaForm, setAgendaForm] = useState({ servicio: SERVICIOS_MANTENIMIENTO[0], fecha: "", hora: "", direccion: "", notas: "" });
-
-  function handleNewPostImage(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setNewImageUrl(URL.createObjectURL(file));
-  }
-  function publishPost() {
-    if (!newCaption.trim() && !newImageUrl) return;
-    const post = {
-      id: Date.now(),
-      autor: "Tú",
-      tipo: "Usuario",
-      variant: Math.floor(Math.random() * 4),
-      likes: 0,
-      caption: newCaption.trim() || "Nueva publicación",
-    };
-    setPosts((prev) => [post, ...prev]);
-    setNewCaption("");
-    setNewImageUrl(null);
-    setScreen("feed");
-  }
-
   function openCamera(mode = "new", plantId = null) {
     setCaptureMode(mode);
     setFollowupPlantId(plantId);
@@ -593,7 +391,7 @@ export default function BrotesApp() {
 
     try {
       const b64 = await fileToBase64(file);
-      // Nota: llamamos a NUESTRO backend (/api/analizar-planta), nunca a Anthropic
+      // Llamamos a NUESTRO backend (/api/analizar-planta), nunca a Anthropic
       // directamente desde el navegador. Así la API key nunca se expone.
       const response = await fetch("/api/analizar-planta", {
         method: "POST",
@@ -618,7 +416,6 @@ export default function BrotesApp() {
     if (!result || !userId) return;
 
     // Sube la foto real a Supabase Storage para que no se pierda al recargar
-    // (antes de esto, la imagen solo vivía como blob: temporal del navegador)
     let publicUrl = imageUrl;
     if (capturedFile) {
       const path = `${userId}/${Date.now()}-${capturedFile.name}`;
@@ -697,89 +494,6 @@ export default function BrotesApp() {
           flexDirection: "column",
         }}
       >
-        {/* ---------------- FEED ---------------- */}
-        {screen === "feed" && !selectedPost && (
-          <>
-            <TopBar />
-            <div style={{ padding: "18px 20px 6px" }}>
-              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 30, color: C.ink, margin: 0 }}>
-                Comunidad
-              </h1>
-              <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: C.moss, margin: "4px 0 0" }}>
-                Viveros y personas cerca de ti
-              </p>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {posts.map((post) => (
-                <button
-                  key={post.id}
-                  onClick={() => setSelectedPost(post)}
-                  style={{
-                    border: "none",
-                    padding: 0,
-                    background: "transparent",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    borderRadius: 6,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div style={{ aspectRatio: "1/1", borderRadius: 6, overflow: "hidden" }}>
-                    <LeafArt variant={post.variant} />
-                  </div>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, color: C.ink, margin: "6px 0 0" }}>
-                    {post.autor}
-                  </p>
-                  <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: C.moss, margin: "1px 0 0" }}>
-                    {post.tipo} · {post.likes} ♥
-                  </p>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ---------------- POST DETAIL ---------------- */}
-        {screen === "feed" && selectedPost && (
-          <>
-            <TopBar />
-            <div style={{ padding: "10px 16px", flex: 1, overflowY: "auto" }}>
-              <button onClick={() => setSelectedPost(null)} style={{ background: "none", border: "none", color: C.ink, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0 12px" }}>
-                <Icon.Back /> <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600 }}>Comunidad</span>
-              </button>
-              <div style={{ background: C.deep, borderRadius: 10, padding: 16, color: C.parchment }}>
-                <div style={{ borderRadius: 6, overflow: "hidden", aspectRatio: "16/11", marginBottom: 16 }}>
-                  <LeafArt variant={selectedPost.variant} />
-                </div>
-                <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: C.moss, margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  {selectedPost.tipo}
-                </p>
-                <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 600, margin: "4px 0 12px" }}>{selectedPost.autor}</h2>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14.5, lineHeight: 1.6, color: "#d9d4c4", margin: 0 }}>
-                  {selectedPost.caption}
-                </p>
-                <button
-                  style={{
-                    marginTop: 20,
-                    width: "100%",
-                    padding: "11px 0",
-                    borderRadius: 3,
-                    border: "1px solid " + C.moss,
-                    background: "transparent",
-                    color: C.parchment,
-                    fontFamily: "'Inter', sans-serif",
-                    fontWeight: 600,
-                    fontSize: 13.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  Seguir a {selectedPost.autor}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
@@ -894,29 +608,11 @@ export default function BrotesApp() {
         {/* ---------------- JARDIN (grid) ---------------- */}
         {screen === "jardin" && !activePlant && (
           <>
-            <TopBar />
-            <div style={{ padding: "18px 20px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 28, color: C.ink, margin: 0 }}>Mi jardín</h1>
-              {garden.length > 0 && (
-                <button
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    background: C.deep,
-                    color: C.parchment,
-                    border: "none",
-                    borderRadius: 20,
-                    padding: "8px 14px",
-                    fontFamily: "'Inter', sans-serif",
-                    fontWeight: 600,
-                    fontSize: 12.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Icon.Share /> Compartir
-                </button>
-              )}
+            <div style={{ padding: "20px 20px 6px", borderBottom: "1px solid " + C.parchmentLine }}>
+              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 28, color: C.ink, margin: 0 }}>Brotes</h1>
+              <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: C.moss, margin: "4px 0 14px" }}>
+                Mi jardín
+              </p>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px 20px" }}>
               {loadingGarden ? (
@@ -988,404 +684,15 @@ export default function BrotesApp() {
           </div>
         )}
 
-        {/* ---------------- CREAR PUBLICACIÓN ---------------- */}
-        {screen === "crear" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "18px 16px 6px" }}>
-              <button onClick={() => setScreen("feed")} style={{ background: "none", border: "none", color: C.ink, cursor: "pointer", padding: 4 }}>
-                <Icon.Back />
-              </button>
-              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 19, color: C.ink, margin: 0 }}>
-                Nueva publicación
-              </h1>
-            </div>
-            <div style={{ padding: "12px 20px", flex: 1 }}>
-              <label
-                htmlFor="new-post-photo"
-                style={{
-                  display: "block",
-                  border: "1px dashed " + C.parchmentLine,
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  cursor: "pointer",
-                  aspectRatio: "4/3",
-                  marginBottom: 16,
-                }}
-              >
-                {newImageUrl ? (
-                  <img src={newImageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: C.moss }}>
-                    <Icon.Gallery />
-                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#8a8368" }}>Agregar una foto</span>
-                  </div>
-                )}
-              </label>
-              <input id="new-post-photo" ref={newPostFileRef} type="file" accept="image/*" onChange={handleNewPostImage} style={{ display: "none" }} />
-
-              <textarea
-                value={newCaption}
-                onChange={(e) => setNewCaption(e.target.value)}
-                placeholder="Comparte algo con la comunidad..."
-                rows={5}
-                style={{
-                  width: "100%",
-                  border: "1px solid " + C.parchmentLine,
-                  borderRadius: 6,
-                  padding: 12,
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 14,
-                  color: C.ink,
-                  resize: "none",
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                onClick={publishPost}
-                style={{
-                  marginTop: 16,
-                  width: "100%",
-                  padding: "12px 0",
-                  borderRadius: 3,
-                  border: "none",
-                  background: C.deep,
-                  color: C.parchment,
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 600,
-                  fontSize: 14,
-                  cursor: "pointer",
-                }}
-              >
-                Publicar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ---------------- TIENDA (catálogo) ---------------- */}
-        {screen === "tienda" && (
-          <>
-            <TopBar />
-            <div style={{ padding: "18px 20px 6px" }}>
-              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 28, color: C.ink, margin: 0 }}>Tienda</h1>
-              <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: C.moss, margin: "4px 0 0" }}>
-                Jardines verticales y accesorios
-              </p>
-            </div>
-            <div style={{ padding: "12px 16px 0" }}>
-              <button
-                onClick={() => setScreen("agenda")}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  background: C.deep,
-                  color: C.parchment,
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "13px 0",
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 600,
-                  fontSize: 13.5,
-                  cursor: "pointer",
-                }}
-              >
-                <Icon.Calendar /> Agendar mantenimiento de tu jardín
-              </button>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {PRODUCTS.map((prod) => (
-                <button
-                  key={prod.id}
-                  onClick={() => {
-                    setSelectedProduct(prod);
-                    setScreen("producto");
-                  }}
-                  style={{ border: "none", padding: 0, background: "transparent", textAlign: "left", cursor: "pointer", borderRadius: 6, overflow: "hidden" }}
-                >
-                  <div style={{ aspectRatio: "1/1", borderRadius: 6, overflow: "hidden" }}>
-                    <LeafArt variant={prod.variant} />
-                  </div>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, color: C.ink, margin: "6px 0 0", lineHeight: 1.3 }}>
-                    {prod.nombre}
-                  </p>
-                  <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.clay, margin: "2px 0 0" }}>
-                    ${prod.precio.toLocaleString("es-MX")} MXN
-                  </p>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ---------------- PRODUCTO DETALLE ---------------- */}
-        {screen === "producto" && selectedProduct && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 30px" }}>
-            <button onClick={() => setScreen("tienda")} style={{ background: "none", border: "none", color: C.ink, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0 12px" }}>
-              <Icon.Back /> <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600 }}>Tienda</span>
-            </button>
-            <div style={{ borderRadius: 8, overflow: "hidden", aspectRatio: "1/1", marginBottom: 16 }}>
-              <LeafArt variant={selectedProduct.variant} />
-            </div>
-            <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 22, color: C.ink, margin: 0 }}>{selectedProduct.nombre}</h2>
-            <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, color: C.clay, margin: "6px 0 14px" }}>
-              ${selectedProduct.precio.toLocaleString("es-MX")} MXN
-            </p>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, lineHeight: 1.6, color: "#3a3527", margin: 0 }}>
-              {selectedProduct.descripcion}
-            </p>
-            <button
-              onClick={() => addToCart(selectedProduct.id)}
-              style={{ marginTop: 22, width: "100%", padding: "13px 0", borderRadius: 3, border: "none", background: C.deep, color: C.parchment, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
-            >
-              Agregar al carrito
-            </button>
-            <button
-              onClick={() => setScreen("carrito")}
-              style={{ marginTop: 10, width: "100%", padding: "11px 0", borderRadius: 3, border: "1px solid " + C.parchmentLine, background: "transparent", color: C.ink, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, cursor: "pointer" }}
-            >
-              Ver carrito {cartCount > 0 ? `(${cartCount})` : ""}
-            </button>
-          </div>
-        )}
-
-        {/* ---------------- CARRITO ---------------- */}
-        {screen === "carrito" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 30px" }}>
-            <button onClick={() => setScreen("tienda")} style={{ background: "none", border: "none", color: C.ink, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0 12px" }}>
-              <Icon.Back /> <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600 }}>Tienda</span>
-            </button>
-            <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 24, color: C.ink, margin: "0 0 16px" }}>Tu carrito</h1>
-
-            {cartCount === 0 ? (
-              <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 15, color: "#6b6552", textAlign: "center", padding: "40px 0" }}>
-                Tu carrito está vacío.
-              </p>
-            ) : (
-              <>
-                {Object.entries(cart).map(([id, qty]) => {
-                  const prod = PRODUCTS.find((p) => p.id === id);
-                  if (!prod) return null;
-                  return (
-                    <div key={id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 0", borderBottom: "1px solid " + C.parchmentLine }}>
-                      <div style={{ width: 56, height: 56, borderRadius: 4, overflow: "hidden", flexShrink: 0 }}>
-                        <LeafArt variant={prod.variant} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: C.ink, margin: 0 }}>{prod.nombre}</p>
-                        <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5, color: C.clay, margin: "2px 0 0" }}>
-                          ${prod.precio.toLocaleString("es-MX")} MXN
-                        </p>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <button onClick={() => changeQty(id, -1)} style={qtyBtnStyle}>
-                          <Icon.Minus />
-                        </button>
-                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, minWidth: 14, textAlign: "center" }}>{qty}</span>
-                        <button onClick={() => changeQty(id, 1)} style={qtyBtnStyle}>
-                          <Icon.Plus style={{ width: 12, height: 12 }} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 0" }}>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 15, color: C.ink }}>Total</span>
-                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, fontSize: 15, color: C.ink }}>
-                    ${cartTotal.toLocaleString("es-MX")} MXN
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setCart({});
-                    setScreen("agendaConfirm");
-                    setAgendaForm((f) => ({ ...f, _orderConfirm: true }));
-                  }}
-                  style={{ width: "100%", padding: "13px 0", borderRadius: 3, border: "none", background: C.deep, color: C.parchment, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, cursor: "pointer" }}
-                >
-                  Confirmar pedido
-                </button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ---------------- AGENDAR MANTENIMIENTO ---------------- */}
-        {screen === "agenda" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 30px" }}>
-            <button onClick={() => setScreen("tienda")} style={{ background: "none", border: "none", color: C.ink, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0 12px" }}>
-              <Icon.Back /> <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 600 }}>Tienda</span>
-            </button>
-            <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 24, color: C.ink, margin: "0 0 4px" }}>
-              Agendar mantenimiento
-            </h1>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#6b6552", margin: "0 0 20px" }}>
-              Un especialista revisará tu jardín en la fecha que elijas.
-            </p>
-
-            <FormLabel>Tipo de servicio</FormLabel>
-            <select
-              value={agendaForm.servicio}
-              onChange={(e) => setAgendaForm((f) => ({ ...f, servicio: e.target.value }))}
-              style={inputStyle}
-            >
-              {SERVICIOS_MANTENIMIENTO.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <div style={{ flex: 1 }}>
-                <FormLabel>Fecha</FormLabel>
-                <input type="date" value={agendaForm.fecha} onChange={(e) => setAgendaForm((f) => ({ ...f, fecha: e.target.value }))} style={inputStyle} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <FormLabel>Hora</FormLabel>
-                <input type="time" value={agendaForm.hora} onChange={(e) => setAgendaForm((f) => ({ ...f, hora: e.target.value }))} style={inputStyle} />
-              </div>
-            </div>
-
-            <FormLabel>Dirección</FormLabel>
-            <input
-              type="text"
-              placeholder="Calle, número, colonia"
-              value={agendaForm.direccion}
-              onChange={(e) => setAgendaForm((f) => ({ ...f, direccion: e.target.value }))}
-              style={inputStyle}
-            />
-
-            <FormLabel>Notas (opcional)</FormLabel>
-            <textarea
-              rows={3}
-              placeholder="Ej. mi jardín vertical tiene manchas amarillas en varias plantas"
-              value={agendaForm.notas}
-              onChange={(e) => setAgendaForm((f) => ({ ...f, notas: e.target.value }))}
-              style={{ ...inputStyle, resize: "none" }}
-            />
-
-            <button
-              onClick={() => setScreen("agendaConfirm")}
-              disabled={!agendaForm.fecha || !agendaForm.hora || !agendaForm.direccion}
-              style={{
-                marginTop: 8,
-                width: "100%",
-                padding: "13px 0",
-                borderRadius: 3,
-                border: "none",
-                background: !agendaForm.fecha || !agendaForm.hora || !agendaForm.direccion ? "#c9c2a8" : C.deep,
-                color: C.parchment,
-                fontFamily: "'Inter', sans-serif",
-                fontWeight: 600,
-                fontSize: 14,
-                cursor: !agendaForm.fecha || !agendaForm.hora || !agendaForm.direccion ? "default" : "pointer",
-              }}
-            >
-              Confirmar cita
-            </button>
-          </div>
-        )}
-
-        {/* ---------------- CONFIRMACIÓN (cita o pedido) ---------------- */}
-        {screen === "agendaConfirm" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "20px 30px" }}>
-            <div style={{ color: C.moss, marginBottom: 14 }}>
-              <Icon.Check />
-            </div>
-            {agendaForm._orderConfirm ? (
-              <>
-                <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 21, color: C.ink, margin: "0 0 8px" }}>
-                  ¡Pedido confirmado!
-                </h2>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: "#6b6552", lineHeight: 1.5 }}>
-                  Te avisaremos cuando tu pedido esté en camino.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 21, color: C.ink, margin: "0 0 8px" }}>
-                  ¡Cita agendada!
-                </h2>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: "#6b6552", lineHeight: 1.5, margin: 0 }}>
-                  {agendaForm.servicio} el {agendaForm.fecha} a las {agendaForm.hora}.
-                </p>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#8a8368", marginTop: 4 }}>
-                  {agendaForm.direccion}
-                </p>
-              </>
-            )}
-            <button
-              onClick={() => {
-                setAgendaForm({ servicio: SERVICIOS_MANTENIMIENTO[0], fecha: "", hora: "", direccion: "", notas: "" });
-                setScreen("tienda");
-              }}
-              style={{ marginTop: 24, padding: "11px 24px", borderRadius: 3, border: "none", background: C.deep, color: C.parchment, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, cursor: "pointer" }}
-            >
-              Volver a la tienda
-            </button>
-          </div>
-        )}
-
         <BottomNav
           screen={screen}
           setScreen={(s) => {
-            setSelectedPost(null);
             setSelectedPlant(null);
             if (s === "camera") openCamera("new");
             else setScreen(s);
           }}
           gardenCount={garden.length}
-          cartCount={cartCount}
         />
-      </div>
-    </div>
-  );
-}
-
-function FormLabel({ children }) {
-  return (
-    <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.05em", textTransform: "uppercase", color: C.moss, margin: "14px 0 6px" }}>
-      {children}
-    </p>
-  );
-}
-
-const inputStyle = {
-  width: "100%",
-  border: "1px solid " + C.parchmentLine,
-  borderRadius: 6,
-  padding: "10px 12px",
-  fontFamily: "'Inter', sans-serif",
-  fontSize: 13.5,
-  color: C.ink,
-  boxSizing: "border-box",
-  background: "#fff",
-};
-
-const qtyBtnStyle = {
-  width: 22,
-  height: 22,
-  borderRadius: "50%",
-  border: "1px solid " + C.parchmentLine,
-  background: "#fff",
-  color: C.ink,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 0,
-};
-
-function TopBar() {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 14px", borderBottom: "1px solid " + C.parchmentLine }}>
-      <Icon.Menu style={{ color: C.ink }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 15, color: C.ink }}>usuario</span>
-        <div style={{ width: 30, height: 30, borderRadius: "50%", background: C.deep, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Icon.User style={{ color: C.parchment, width: 17, height: 17 }} />
-        </div>
       </div>
     </div>
   );

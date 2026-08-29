@@ -79,48 +79,17 @@ function Tag({ children, color }) {
 // ---------- Insignia de madera con el nombre de la app ----------
 function WordmarkBadge() {
   return (
-    <div
+    <img
+      src="/logo.png"
+      alt="Ámbitat"
       style={{
         alignSelf: "center",
-        background: C.wood,
-        border: "3px solid " + C.woodDark,
-        borderRadius: 40,
-        padding: "14px 26px",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        boxShadow: "0 6px 0 " + C.woodDark,
+        width: "78%",
+        maxWidth: 260,
+        height: "auto",
+        display: "block",
       }}
-    >
-      <span
-        style={{
-          fontFamily: "'Fraunces', serif",
-          fontWeight: 900,
-          fontSize: 26,
-          letterSpacing: "0.02em",
-          color: C.cream,
-          textShadow: "1px 1px 0 " + C.woodDark,
-        }}
-      >
-        ÁMB
-      </span>
-      <svg width="22" height="26" viewBox="0 0 22 26" fill="none">
-        <path d="M11 1L20 14H14L20 22H2L8 14H2L11 1Z" fill={C.pine} stroke={C.woodDark} strokeWidth="1" strokeLinejoin="round" />
-        <rect x="9.5" y="21" width="3" height="4" fill={C.woodDark} />
-      </svg>
-      <span
-        style={{
-          fontFamily: "'Fraunces', serif",
-          fontWeight: 900,
-          fontSize: 26,
-          letterSpacing: "0.02em",
-          color: C.cream,
-          textShadow: "1px 1px 0 " + C.woodDark,
-        }}
-      >
-        TAT
-      </span>
-    </div>
+    />
   );
 }
 

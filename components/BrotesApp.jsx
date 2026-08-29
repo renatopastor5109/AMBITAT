@@ -31,6 +31,29 @@ function fileToBase64(file) {
   });
 }
 
+// Calcula cuánto falta (o si ya se pasó) para el próximo riego,
+// usando la fecha de la última foto guardada como referencia.
+function getWateringStatus(plant) {
+  if (!plant?.dias_entre_riegos || !plant?.history?.length) return null;
+  const last = plant.history[plant.history.length - 1];
+  let lastDate = null;
+  if (last.dateISO) {
+    lastDate = new Date(last.dateISO);
+  } else if (last.date) {
+    const parts = last.date.split("/"); // formato es-MX: DD/MM/YYYY
+    if (parts.length === 3) lastDate = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+  }
+  if (!lastDate || isNaN(lastDate)) return null;
+
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const daysSince = Math.floor((Date.now() - lastDate.getTime()) / msPerDay);
+  const remaining = plant.dias_entre_riegos - daysSince;
+
+  if (remaining <= 0) return { label: daysSince === plant.dias_entre_riegos ? "Riega hoy" : "Necesita agua", urgent: true };
+  if (remaining === 1) return { label: "Riega mañana", urgent: false };
+  return { label: `Riega en ${remaining} días`, urgent: false };
+}
+
 const ESTADO_STYLES = {
   saludable: { bg: C.pine, label: "Saludable" },
   regular: { bg: C.amber, label: "Necesita atención" },
@@ -153,19 +176,41 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            marginTop: 12,
-            padding: "5px 12px",
-            borderRadius: 20,
-            background: estado.bg,
-          }}
-        >
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#fff" }}>{estado.label}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 12px",
+              borderRadius: 20,
+              background: estado.bg,
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#fff" }}>{estado.label}</span>
+          </div>
+          {(() => {
+            const watering = getWateringStatus(data);
+            if (!watering) return null;
+            return (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "5px 12px",
+                  borderRadius: 20,
+                  background: watering.urgent ? "#F3DCC9" : C.creamLine,
+                }}
+              >
+                <span style={{ fontSize: 11 }}>💧</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 600, color: watering.urgent ? C.rust : "#6b6047" }}>
+                  {watering.label}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -279,16 +324,17 @@ const Icon = {
 
 // ---------- Nav inferior flotante ----------
 function BottomNav({ screen, setScreen, gardenCount }) {
+  const jardinActive = screen === "jardin";
+  const cameraActive = screen === "camera" || screen === "analyzing" || screen === "result";
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
+        alignItems: "stretch",
+        gap: 8,
         margin: "0 16px 16px",
-        padding: 10,
-        borderRadius: 30,
+        padding: 8,
+        borderRadius: 26,
         background: C.wood,
         boxShadow: "0 6px 0 " + C.woodDark,
       }}
@@ -298,39 +344,44 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         style={{
           flex: 1,
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          gap: 8,
-          background: C.cream,
+          gap: 4,
+          background: jardinActive ? C.cream : "transparent",
           border: "none",
-          borderRadius: 22,
-          padding: "12px 0",
+          borderRadius: 18,
+          padding: "10px 0",
           cursor: "pointer",
-          color: C.pine,
+          color: jardinActive ? C.pine : "rgba(245,239,221,0.75)",
         }}
       >
         <Icon.Leaf />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: C.ink }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: jardinActive ? C.ink : "rgba(245,239,221,0.85)" }}>
           Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
         </span>
       </button>
       <button
         onClick={() => setScreen("camera")}
         style={{
-          width: 48,
-          height: 48,
-          borderRadius: "50%",
-          border: "none",
-          background: C.pineDark,
-          color: C.cream,
+          flex: 1,
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
+          gap: 4,
+          background: cameraActive ? C.cream : "transparent",
+          border: "none",
+          borderRadius: 18,
+          padding: "10px 0",
           cursor: "pointer",
-          flexShrink: 0,
+          color: cameraActive ? C.pine : "rgba(245,239,221,0.75)",
         }}
       >
         <Icon.Camera />
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: cameraActive ? C.ink : "rgba(245,239,221,0.85)" }}>
+          Cámara
+        </span>
       </button>
     </div>
   );
@@ -363,6 +414,7 @@ export default function BrotesApp() {
       confianza: row.confianza,
       estado_general: row.estado_general,
       riego: row.riego,
+      dias_entre_riegos: row.dias_entre_riegos,
       luz: row.luz,
       problemas_detectados: row.problemas_detectados || [],
       consejos: row.consejos || [],
@@ -454,7 +506,12 @@ export default function BrotesApp() {
       }
     }
 
-    const historyEntry = { date: new Date().toLocaleDateString("es-MX"), imageUrl: publicUrl, estado_general: result.estado_general };
+    const historyEntry = {
+      date: new Date().toLocaleDateString("es-MX"),
+      dateISO: new Date().toISOString(),
+      imageUrl: publicUrl,
+      estado_general: result.estado_general,
+    };
 
     if (captureMode === "followup" && followupPlantId) {
       const plant = garden.find((p) => p.id === followupPlantId);
@@ -467,6 +524,7 @@ export default function BrotesApp() {
           confianza: result.confianza,
           estado_general: result.estado_general,
           riego: result.riego,
+          dias_entre_riegos: result.dias_entre_riegos,
           luz: result.luz,
           problemas_detectados: result.problemas_detectados,
           consejos: result.consejos,
@@ -489,6 +547,7 @@ export default function BrotesApp() {
         confianza: result.confianza,
         estado_general: result.estado_general,
         riego: result.riego,
+        dias_entre_riegos: result.dias_entre_riegos,
         luz: result.luz,
         problemas_detectados: result.problemas_detectados,
         consejos: result.consejos,
@@ -618,11 +677,14 @@ export default function BrotesApp() {
         {/* ---------------- JARDIN (grid) ---------------- */}
         {screen === "jardin" && !activePlant && (
           <>
-            <div style={{ padding: "22px 20px 10px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ padding: "22px 20px 10px", display: "flex", flexDirection: "column", gap: 10 }}>
               <WordmarkBadge />
               <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 800, fontSize: 26, color: C.ink, margin: 0, textAlign: "center" }}>
                 Mi jardín
               </h1>
+              <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 13.5, color: C.woodDark, margin: 0, textAlign: "center" }}>
+                Cuida tus plantas, una foto a la vez.
+              </p>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 20px" }}>
               {loadingGarden ? (
@@ -642,7 +704,30 @@ export default function BrotesApp() {
                   </button>
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <>
+                  {(() => {
+                    const urgentes = garden.filter((p) => getWateringStatus(p)?.urgent).length;
+                    if (urgentes === 0) return null;
+                    return (
+                      <div
+                        style={{
+                          background: "#F3DCC9",
+                          borderRadius: 14,
+                          padding: "12px 16px",
+                          marginBottom: 14,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <span style={{ fontSize: 18 }}>💧</span>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: C.rust, margin: 0 }}>
+                          {urgentes === 1 ? "1 planta necesita agua hoy" : `${urgentes} plantas necesitan agua hoy`}
+                        </p>
+                      </div>
+                    );
+                  })()}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                   {garden.map((p) => (
                     <div key={p.id} onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
                       <button
@@ -659,7 +744,8 @@ export default function BrotesApp() {
                       <PlantCard data={p} imageUrl={p.imageUrl} compact />
                     </div>
                   ))}
-                </div>
+                  </div>
+                </>
               )}
             </div>
           </>

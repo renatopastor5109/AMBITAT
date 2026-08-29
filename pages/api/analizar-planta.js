@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         model: "claude-sonnet-5",
         max_tokens: 1000,
         system:
-          "Eres un botánico experto. Analiza la foto de una planta y responde SOLO con un objeto JSON válido, sin texto adicional ni backticks de markdown. Claves exactas: nombre_comun (string), nombre_cientifico (string), confianza ('alta'|'media'|'baja'), estado_general ('saludable'|'regular'|'critico'), riego (string breve), luz (string breve), problemas_detectados (array de strings, vacío si no hay), consejos (array de 2 a 4 strings). Responde en español.",
+          "Eres un botánico experto. Analiza la foto de una planta y responde SOLO con un objeto JSON válido, sin texto adicional ni backticks de markdown. Claves exactas: nombre_comun (string), nombre_cientifico (string), confianza ('alta'|'media'|'baja'), estado_general ('saludable'|'regular'|'critico'), riego (string breve describiendo el riego), dias_entre_riegos (número entero: tu mejor estimación de cada cuántos días se debe regar esta planta según su especie y el clima promedio), luz (string breve), problemas_detectados (array de strings, vacío si no hay), consejos (array de 2 a 4 strings). Responde en español.",
         messages: [
           {
             role: "user",

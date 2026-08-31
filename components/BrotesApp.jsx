@@ -20,6 +20,43 @@ const C = {
 
 const FONTS_IMPORT = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+.brotes-shell {
+  width: 100%;
+  max-width: 420px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+}
+.brotes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* Tablet y computadora: la app "flota" como una tarjeta centrada en vez de ocupar toda la pantalla */
+@media (min-width: 700px) {
+  .brotes-shell {
+    max-width: 480px;
+    min-height: calc(100vh - 48px);
+    margin-top: 24px;
+    margin-bottom: 24px;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 30px 70px -25px rgba(40, 30, 10, 0.45);
+  }
+}
+
+/* Pantallas grandes: aprovecha el ancho extra con más columnas en el jardín */
+@media (min-width: 1080px) {
+  .brotes-shell {
+    max-width: 900px;
+  }
+  .brotes-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
 `;
 
 function fileToBase64(file) {
@@ -367,9 +404,11 @@ export default function BrotesApp() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   const [garden, setGarden] = useState([]);
   const [userId, setUserId] = useState(null);
+  const [notifStatus, setNotifStatus] = useState("checking"); // checking | unsupported | default | denied | subscribed
   const [loadingGarden, setLoadingGarden] = useState(true);
   const [capturedFile, setCapturedFile] = useState(null);
   const fileRef = useRef(null);
@@ -423,6 +462,65 @@ export default function BrotesApp() {
     initAuth();
   }, []);
 
+  useEffect(() => {
+    async function checkNotifStatus() {
+      if (!userId) return;
+      if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setNotifStatus("unsupported");
+        return;
+      }
+      if (Notification.permission === "denied") {
+        setNotifStatus("denied");
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const existing = reg ? await reg.pushManager.getSubscription() : null;
+        setNotifStatus(existing ? "subscribed" : "default");
+      } catch {
+        setNotifStatus("default");
+      }
+    }
+    checkNotifStatus();
+  }, [userId]);
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  }
+
+  async function enableNotifications() {
+    if (!userId) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setNotifStatus("unsupported");
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotifStatus("denied");
+        return;
+      }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+      });
+      const { error } = await supabase
+        .from("push_subscriptions")
+        .upsert({ user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON() }, { onConflict: "endpoint" });
+      if (error) {
+        console.error("Error guardando suscripción:", error);
+        return;
+      }
+      setNotifStatus("subscribed");
+    } catch (err) {
+      console.error("Error activando notificaciones:", err);
+    }
+  }
+
   function openCamera(mode = "new", plantId = null) {
     setCaptureMode(mode);
     setFollowupPlantId(plantId);
@@ -462,6 +560,7 @@ export default function BrotesApp() {
 
   async function handleSaveResult() {
     if (!result || !userId) return;
+    setSaveError(null);
 
     let publicUrl = imageUrl;
     if (capturedFile) {
@@ -472,6 +571,8 @@ export default function BrotesApp() {
         publicUrl = data.publicUrl;
       } else {
         console.error("Error subiendo foto:", uploadError);
+        setSaveError("No pudimos guardar la foto (revisa que exista el bucket 'plant-photos' en Supabase, marcado como público). Nada se guardó todavía — puedes intentar de nuevo.");
+        return;
       }
     }
 
@@ -539,7 +640,7 @@ export default function BrotesApp() {
   return (
     <div style={{ minHeight: "100vh", background: C.gold, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
-      <div style={{ width: "100%", maxWidth: 420, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <div className="brotes-shell">
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.pineDark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -612,29 +713,36 @@ export default function BrotesApp() {
               saved={isSaved}
               onSave={handleSaveResult}
               footer={
-                isSaved && (
-                  <button
-                    onClick={() => {
-                      if (captureMode === "followup") setSelectedPlant(followupPlantId);
-                      setScreen("jardin");
-                    }}
-                    style={{
-                      marginTop: 10,
-                      width: "100%",
-                      padding: "10px 0",
-                      borderRadius: 10,
-                      border: "1px solid rgba(245,239,221,0.5)",
-                      background: "transparent",
-                      color: C.cream,
-                      fontFamily: "'Inter', sans-serif",
-                      fontWeight: 600,
-                      fontSize: 13.5,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Ir a mi jardín →
-                  </button>
-                )
+                <>
+                  {saveError && (
+                    <p style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#F3DCC9", lineHeight: 1.4 }}>
+                      {saveError}
+                    </p>
+                  )}
+                  {isSaved && (
+                    <button
+                      onClick={() => {
+                        if (captureMode === "followup") setSelectedPlant(followupPlantId);
+                        setScreen("jardin");
+                      }}
+                      style={{
+                        marginTop: 10,
+                        width: "100%",
+                        padding: "10px 0",
+                        borderRadius: 10,
+                        border: "1px solid rgba(245,239,221,0.5)",
+                        background: "transparent",
+                        color: C.cream,
+                        fontFamily: "'Inter', sans-serif",
+                        fontWeight: 600,
+                        fontSize: 13.5,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Ir a mi jardín →
+                    </button>
+                  )}
+                </>
               }
             />
             <button onClick={() => openCamera(captureMode, followupPlantId)} style={{ background: "transparent", border: "none", color: C.woodDark, fontSize: 13, cursor: "pointer", padding: "14px 4px" }}>
@@ -654,6 +762,38 @@ export default function BrotesApp() {
               <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 13.5, color: C.woodDark, margin: 0, textAlign: "center" }}>
                 Cuida tus plantas, una foto a la vez.
               </p>
+              {notifStatus === "default" && (
+                <button
+                  onClick={enableNotifications}
+                  style={{
+                    alignSelf: "center",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "transparent",
+                    border: "1px solid " + C.woodDark,
+                    borderRadius: 20,
+                    padding: "6px 14px",
+                    cursor: "pointer",
+                    color: C.woodDark,
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  🔔 Activar recordatorios de riego
+                </button>
+              )}
+              {notifStatus === "subscribed" && (
+                <p style={{ alignSelf: "center", fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.pine, margin: 0 }}>
+                  🔔 Recordatorios activados
+                </p>
+              )}
+              {notifStatus === "denied" && (
+                <p style={{ alignSelf: "center", fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.woodDark, margin: 0, textAlign: "center", opacity: 0.8 }}>
+                  Los permisos de notificación están bloqueados en tu navegador.
+                </p>
+              )}
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 20px" }}>
               {loadingGarden ? (
@@ -696,7 +836,7 @@ export default function BrotesApp() {
                       </div>
                     );
                   })()}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                  <div className="brotes-grid">
                   {garden.map((p) => (
                     <div key={p.id} onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
                       <button

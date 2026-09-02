@@ -18,10 +18,10 @@ const C = {
   mossText: "#6b8257",
 
   // ---- Neumorfismo: un solo tono de "lienzo" por modo, todo se talla con sombras ----
-  base: "#E7E0C8",            // lienzo claro (pantallas normales)
+  base: "#E3D3A0",            // lienzo claro (pantallas normales) — dorado más saturado
   baseDark: "#2B382E",        // lienzo oscuro (cámara / análisis / resultado)
-  shadowDark: "#c3b78d",      // sombra oscura sobre lienzo claro
-  shadowLight: "#ffffff",     // sombra clara sobre lienzo claro
+  shadowDark: "#b7a26a",      // sombra oscura sobre lienzo claro — más contraste
+  shadowLight: "#fdf8e9",     // sombra clara sobre lienzo claro — cálida, no blanco puro
   shadowDarkOnDark: "#1c261f",// sombra oscura sobre lienzo oscuro
   shadowLightOnDark: "#3a4c3e", // sombra clara sobre lienzo oscuro
 };
@@ -49,7 +49,7 @@ const FONTS_IMPORT = `
   display: flex;
   flex-direction: column;
   margin: 0 auto;
-  background: #E7E0C8;
+  background: #E3D3A0;
 }
 .brotes-grid {
   display: grid;

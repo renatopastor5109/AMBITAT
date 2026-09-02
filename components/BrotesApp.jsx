@@ -3,20 +3,41 @@ import { supabase } from "../lib/supabaseClient";
 
 // ---- Design tokens (paleta cálida: madera + oro + pino) ----
 const C = {
-  gold: "#EAC468",       // lienzo de fondo de toda la app
-  goldEdge: "#DDB556",   // sombra sutil del lienzo
-  wood: "#8B5A2E",       // marco / insignia del logo
-  woodDark: "#6E4522",   // sombra de madera
-  pine: "#3F5D3E",       // verde pino medio: botones, cámara, estado saludable
-  pineDark: "#28402A",   // pantallas de cámara/análisis/resultado
-  cream: "#F5EFDD",      // parte superior de la tarjeta
-  creamLine: "#e2d7b8",  // líneas divisoras sobre crema
-  ink: "#221C13",        // texto principal
-  amber: "#D6A23D",      // estado "necesita atención"
-  rust: "#9C3B2E",       // estado crítico
-  coral: "#D98B72",      // texto de "problemas" legible sobre verde pino
-  mossText: "#6b8257",   // etiquetas mono sobre crema
+  gold: "#EAC468",       // (heredado, ya no se usa como lienzo principal)
+  goldEdge: "#DDB556",
+  wood: "#8B5A2E",        // texto/acentos "madera"
+  woodDark: "#6E4522",
+  pine: "#3F5D3E",        // acento verde pino (texto, íconos activos)
+  pineDark: "#28402A",
+  cream: "#F5EFDD",
+  creamLine: "#e2d7b8",
+  ink: "#3a3527",         // texto principal sobre el lienzo neumórfico
+  amber: "#C98A2E",       // estado "necesita atención"
+  rust: "#B0452F",        // estado crítico
+  coral: "#c9714f",
+  mossText: "#6b8257",
+
+  // ---- Neumorfismo: un solo tono de "lienzo" por modo, todo se talla con sombras ----
+  base: "#E7E0C8",            // lienzo claro (pantallas normales)
+  baseDark: "#2B382E",        // lienzo oscuro (cámara / análisis / resultado)
+  shadowDark: "#c3b78d",      // sombra oscura sobre lienzo claro
+  shadowLight: "#ffffff",     // sombra clara sobre lienzo claro
+  shadowDarkOnDark: "#1c261f",// sombra oscura sobre lienzo oscuro
+  shadowLightOnDark: "#3a4c3e", // sombra clara sobre lienzo oscuro
 };
+
+// Sombra doble "elevada" (el elemento parece sobresalir del lienzo)
+function raised(dark, size = 8) {
+  const d = dark ? C.shadowDarkOnDark : C.shadowDark;
+  const l = dark ? C.shadowLightOnDark : C.shadowLight;
+  return `${size}px ${size}px ${size * 2}px ${d}, -${size}px -${size}px ${size * 2}px ${l}`;
+}
+// Sombra doble "hundida" (el elemento parece presionado hacia adentro del lienzo)
+function pressed(dark, size = 6) {
+  const d = dark ? C.shadowDarkOnDark : C.shadowDark;
+  const l = dark ? C.shadowLightOnDark : C.shadowLight;
+  return `inset ${size}px ${size}px ${size * 1.6}px ${d}, inset -${size}px -${size}px ${size * 1.6}px ${l}`;
+}
 
 const FONTS_IMPORT = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
@@ -28,11 +49,12 @@ const FONTS_IMPORT = `
   display: flex;
   flex-direction: column;
   margin: 0 auto;
+  background: #E7E0C8;
 }
 .brotes-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 16px;
 }
 
 /* Tablet y computadora: la app "flota" como una tarjeta centrada en vez de ocupar toda la pantalla */
@@ -42,7 +64,7 @@ const FONTS_IMPORT = `
     min-height: calc(100vh - 48px);
     margin-top: 24px;
     margin-bottom: 24px;
-    border-radius: 28px;
+    border-radius: 32px;
     overflow: hidden;
     box-shadow: 0 30px 70px -25px rgba(40, 30, 10, 0.45);
   }
@@ -137,113 +159,122 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
     <div
       style={{
         borderRadius: 26,
-        overflow: "hidden",
-        boxShadow: "0 10px 0 " + C.woodDark + "33, 0 14px 24px -10px rgba(40,64,42,0.5)",
+        background: C.base,
+        boxShadow: raised(false, compact ? 6 : 9),
+        padding: compact ? "16px 14px 14px" : "22px 22px 20px",
       }}
     >
-      {/* bloque superior: crema */}
-      <div style={{ background: C.cream, padding: compact ? "16px 14px 14px" : "22px 22px 18px" }}>
-        <div style={{ display: "flex", gap: compact ? 10 : 16 }}>
-          {imageUrl && (
+      <div style={{ display: "flex", gap: compact ? 10 : 16 }}>
+        {imageUrl && (
+          <div
+            style={{
+              width: compact ? 56 : 78,
+              height: compact ? 56 : 78,
+              borderRadius: 14,
+              padding: 4,
+              flexShrink: 0,
+              background: C.base,
+              boxShadow: pressed(false, 4),
+            }}
+          >
             <img
               src={imageUrl}
               alt={data.nombre_comun}
-              style={{
-                width: compact ? 56 : 78,
-                height: compact ? 56 : 78,
-                objectFit: "cover",
-                borderRadius: 12,
-                border: "1px solid " + C.creamLine,
-                flexShrink: 0,
-              }}
+              style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10, display: "block" }}
             />
-          )}
-          <div style={{ minWidth: 0 }}>
-            {!compact && (
-              <Tag>{data.confianza === "alta" ? "Identificación confiable" : "Identificación aproximada"}</Tag>
-            )}
-            <h2
-              style={{
-                fontFamily: "'Fraunces', serif",
-                fontWeight: 700,
-                fontSize: compact ? 16 : 24,
-                color: C.ink,
-                margin: "2px 0 0",
-                lineHeight: 1.1,
-              }}
-            >
-              {data.nombre_comun}
-            </h2>
-            {!compact && (
-              <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 14, color: "#6b6047", margin: "2px 0 0" }}>
-                {data.nombre_cientifico}
-              </p>
-            )}
           </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          <div
+        )}
+        <div style={{ minWidth: 0 }}>
+          {!compact && <Tag>{data.confianza === "alta" ? "Identificación confiable" : "Identificación aproximada"}</Tag>}
+          <h2
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "5px 12px",
-              borderRadius: 20,
-              background: estado.bg,
+              fontFamily: "'Fraunces', serif",
+              fontWeight: 700,
+              fontSize: compact ? 16 : 24,
+              color: C.ink,
+              margin: "2px 0 0",
+              lineHeight: 1.1,
             }}
           >
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#fff" }}>{estado.label}</span>
-          </div>
-          {(() => {
-            const watering = getWateringStatus(data);
-            if (!watering) return null;
-            return (
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "5px 12px",
-                  borderRadius: 20,
-                  background: watering.urgent ? "#F3DCC9" : C.creamLine,
-                }}
-              >
-                <span style={{ fontSize: 11 }}>💧</span>
-                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 600, color: watering.urgent ? C.rust : "#6b6047" }}>
-                  {watering.label}
-                </span>
-              </div>
-            );
-          })()}
+            {data.nombre_comun}
+          </h2>
+          {!compact && (
+            <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 14, color: "#6b6047", margin: "2px 0 0" }}>
+              {data.nombre_cientifico}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* bloque inferior: verde pino */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "5px 12px",
+            borderRadius: 20,
+            background: C.base,
+            boxShadow: pressed(false, 3),
+          }}
+        >
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: estado.bg }} />
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: estado.bg }}>{estado.label}</span>
+        </div>
+        {(() => {
+          const watering = getWateringStatus(data);
+          if (!watering) return null;
+          return (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "5px 12px",
+                borderRadius: 20,
+                background: C.base,
+                boxShadow: pressed(false, 3),
+              }}
+            >
+              <span style={{ fontSize: 11 }}>💧</span>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: watering.urgent ? C.rust : "#6b6047" }}>
+                {watering.label}
+              </span>
+            </div>
+          );
+        })()}
+      </div>
+
       {!compact && (
-        <div style={{ background: C.pine, padding: "18px 22px 22px", color: C.cream }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <>
+          <div
+            style={{
+              marginTop: 18,
+              borderRadius: 16,
+              background: C.base,
+              boxShadow: pressed(false, 5),
+              padding: "14px 16px",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 10,
+            }}
+          >
             <div>
-              <Tag color="#bcd0af">RIEGO</Tag>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, margin: "3px 0 0", opacity: 0.95 }}>
-                {data.riego}
-              </p>
+              <Tag>RIEGO</Tag>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: "3px 0 0" }}>{data.riego}</p>
             </div>
             <div>
-              <Tag color="#c7d6b8">LUZ</Tag>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, margin: "3px 0 0", opacity: 0.95 }}>
-                {data.luz}
-              </p>
+              <Tag>LUZ</Tag>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: "3px 0 0" }}>{data.luz}</p>
             </div>
           </div>
 
           {data.problemas_detectados && data.problemas_detectados.length > 0 && (
-            <div style={{ marginTop: 16, borderTop: "1px solid rgba(245,239,221,0.2)", paddingTop: 12 }}>
-              <Tag color={C.coral}>Se detectó</Tag>
+            <div style={{ marginTop: 14, borderRadius: 16, background: C.base, boxShadow: pressed(false, 5), padding: "14px 16px" }}>
+              <Tag color={C.rust}>Se detectó</Tag>
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {data.problemas_detectados.map((p, i) => (
-                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.coral, marginBottom: 3 }}>
+                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.rust, marginBottom: 3 }}>
                     {p}
                   </li>
                 ))}
@@ -252,11 +283,11 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
           )}
 
           {data.consejos && data.consejos.length > 0 && (
-            <div style={{ marginTop: 14, borderTop: "1px solid rgba(245,239,221,0.2)", paddingTop: 12 }}>
-              <Tag color="#c7d6b8">Consejos de cuidado</Tag>
+            <div style={{ marginTop: 14, borderRadius: 16, background: C.base, boxShadow: pressed(false, 5), padding: "14px 16px" }}>
+              <Tag>Consejos de cuidado</Tag>
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {data.consejos.map((c, i) => (
-                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, marginBottom: 3, opacity: 0.95 }}>
+                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, marginBottom: 3 }}>
                     {c}
                   </li>
                 ))}
@@ -271,25 +302,23 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
               style={{
                 marginTop: 18,
                 width: "100%",
-                padding: "11px 0",
-                borderRadius: 10,
+                padding: "12px 0",
+                borderRadius: 14,
                 border: "none",
-                background: saved ? "rgba(245,239,221,0.35)" : C.cream,
-                color: saved ? C.cream : C.pine,
+                background: C.base,
+                boxShadow: saved ? pressed(false, 5) : raised(false, 5),
+                color: saved ? "#8a8368" : C.pine,
                 fontFamily: "'Inter', sans-serif",
                 fontWeight: 700,
                 fontSize: 13.5,
                 cursor: saved ? "default" : "pointer",
               }}
             >
-              {saved ? "Guardado" : "Guardar"}
+              {saved ? "Guardado ✓" : "Guardar"}
             </button>
           )}
           {footer}
-        </div>
-      )}
-      {compact && (
-        <div style={{ background: C.pine, padding: "8px 14px 10px" }} />
+        </>
       )}
     </div>
   );
@@ -337,12 +366,12 @@ function BottomNav({ screen, setScreen, gardenCount }) {
       style={{
         display: "flex",
         alignItems: "stretch",
-        gap: 8,
+        gap: 10,
         margin: "0 16px 16px",
-        padding: 8,
-        borderRadius: 26,
-        background: C.wood,
-        boxShadow: "0 6px 0 " + C.woodDark,
+        padding: 10,
+        borderRadius: 28,
+        background: C.base,
+        boxShadow: raised(false, 7),
       }}
     >
       <button
@@ -354,16 +383,17 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 4,
-          background: jardinActive ? C.cream : "transparent",
+          background: C.base,
+          boxShadow: jardinActive ? pressed(false, 4) : "none",
           border: "none",
           borderRadius: 18,
           padding: "10px 0",
           cursor: "pointer",
-          color: jardinActive ? C.pine : "rgba(245,239,221,0.75)",
+          color: jardinActive ? C.pine : "#9a9074",
         }}
       >
         <Icon.Leaf />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: jardinActive ? C.ink : "rgba(245,239,221,0.85)" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: jardinActive ? C.ink : "#9a9074" }}>
           Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
         </span>
       </button>
@@ -376,16 +406,17 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 4,
-          background: cameraActive ? C.cream : "transparent",
+          background: C.base,
+          boxShadow: cameraActive ? pressed(false, 4) : "none",
           border: "none",
           borderRadius: 18,
           padding: "10px 0",
           cursor: "pointer",
-          color: cameraActive ? C.pine : "rgba(245,239,221,0.75)",
+          color: cameraActive ? C.pine : "#9a9074",
         }}
       >
         <Icon.Camera />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: cameraActive ? C.ink : "rgba(245,239,221,0.85)" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: cameraActive ? C.ink : "#9a9074" }}>
           Cámara
         </span>
       </button>
@@ -638,12 +669,12 @@ export default function BrotesApp() {
   const isDarkScreen = screen === "camera" || screen === "analyzing" || screen === "result";
 
   return (
-    <div style={{ minHeight: "100vh", background: C.gold, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: C.base, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
       <div className="brotes-shell">
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.pineDark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.baseDark, margin: 16, borderRadius: 26, boxShadow: raised(true, 8) }}>
             <div style={{ padding: "18px 20px 4px" }}>
               <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#a9c19c", margin: 0 }}>
                 {captureMode === "followup" ? "Seguimiento de planta" : "Nueva planta"}
@@ -658,17 +689,17 @@ export default function BrotesApp() {
                 flex: 1,
                 margin: "14px 20px",
                 borderRadius: 18,
-                border: "1px dashed rgba(245,239,221,0.3)",
+                background: C.baseDark,
+                boxShadow: pressed(true, 7),
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 minHeight: 260,
-                background: "radial-gradient(circle at 50% 30%, #345a37 0%, #1f3521 75%)",
               }}
             >
               <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
-                <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke={C.cream} strokeWidth="1.4" opacity="0.7" />
-                <circle cx="12" cy="13" r="3.4" stroke={C.cream} strokeWidth="1.4" opacity="0.7" />
+                <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke={C.cream} strokeWidth="1.4" opacity="0.5" />
+                <circle cx="12" cy="13" r="3.4" stroke={C.cream} strokeWidth="1.4" opacity="0.5" />
               </svg>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "10px 30px 26px" }}>
@@ -677,7 +708,15 @@ export default function BrotesApp() {
               </button>
               <button
                 onClick={() => fileRef.current?.click()}
-                style={{ width: 66, height: 66, borderRadius: "50%", border: "4px solid " + C.cream, background: "transparent", cursor: "pointer" }}
+                style={{
+                  width: 68,
+                  height: 68,
+                  borderRadius: "50%",
+                  border: "none",
+                  background: C.baseDark,
+                  boxShadow: raised(true, 6),
+                  cursor: "pointer",
+                }}
                 aria-label="Tomar foto"
               />
               <div style={{ width: 22 }} />
@@ -689,8 +728,12 @@ export default function BrotesApp() {
 
         {/* ---------------- ANALYZING ---------------- */}
         {screen === "analyzing" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, background: C.pineDark, margin: 16, borderRadius: 26 }}>
-            {imageUrl && <img src={imageUrl} alt="planta" style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 14, opacity: 0.9 }} />}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, background: C.baseDark, margin: 16, borderRadius: 26, boxShadow: raised(true, 8) }}>
+            {imageUrl && (
+              <div style={{ padding: 5, borderRadius: 18, background: C.baseDark, boxShadow: pressed(true, 5) }}>
+                <img src={imageUrl} alt="planta" style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 14, display: "block" }} />
+              </div>
+            )}
             <div style={{ display: "flex", gap: 6 }}>
               {[0, 1, 2].map((i) => (
                 <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: C.cream, animation: `pulse 1.1s ${i * 0.15}s infinite ease-in-out` }} />
@@ -715,7 +758,7 @@ export default function BrotesApp() {
               footer={
                 <>
                   {saveError && (
-                    <p style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#F3DCC9", lineHeight: 1.4 }}>
+                    <p style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.rust, lineHeight: 1.4 }}>
                       {saveError}
                     </p>
                   )}
@@ -728,11 +771,12 @@ export default function BrotesApp() {
                       style={{
                         marginTop: 10,
                         width: "100%",
-                        padding: "10px 0",
-                        borderRadius: 10,
-                        border: "1px solid rgba(245,239,221,0.5)",
-                        background: "transparent",
-                        color: C.cream,
+                        padding: "11px 0",
+                        borderRadius: 14,
+                        border: "none",
+                        background: C.base,
+                        boxShadow: raised(false, 4),
+                        color: C.ink,
                         fontFamily: "'Inter', sans-serif",
                         fontWeight: 600,
                         fontSize: 13.5,
@@ -770,10 +814,11 @@ export default function BrotesApp() {
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    background: "transparent",
-                    border: "1px solid " + C.woodDark,
+                    background: C.base,
+                    boxShadow: raised(false, 4),
+                    border: "none",
                     borderRadius: 20,
-                    padding: "6px 14px",
+                    padding: "8px 16px",
                     cursor: "pointer",
                     color: C.woodDark,
                     fontFamily: "'Inter', sans-serif",
@@ -807,7 +852,7 @@ export default function BrotesApp() {
                   </p>
                   <button
                     onClick={() => openCamera("new")}
-                    style={{ marginTop: 14, background: C.pine, color: C.cream, border: "none", borderRadius: 12, padding: "11px 20px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+                    style={{ marginTop: 14, background: C.base, boxShadow: raised(false, 5), color: C.pine, border: "none", borderRadius: 14, padding: "12px 22px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
                   >
                     Analizar mi primera planta
                   </button>
@@ -820,10 +865,11 @@ export default function BrotesApp() {
                     return (
                       <div
                         style={{
-                          background: "#F3DCC9",
-                          borderRadius: 14,
+                          background: C.base,
+                          boxShadow: pressed(false, 5),
+                          borderRadius: 16,
                           padding: "12px 16px",
-                          marginBottom: 14,
+                          marginBottom: 16,
                           display: "flex",
                           alignItems: "center",
                           gap: 10,
@@ -846,7 +892,7 @@ export default function BrotesApp() {
                           const { error } = await supabase.from("plantas").delete().eq("id", p.id);
                           if (error) console.error("Error borrando planta:", error);
                         }}
-                        style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: "rgba(34,28,19,0.55)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: C.base, boxShadow: raised(false, 3), border: "none", borderRadius: "50%", width: 24, height: 24, color: C.woodDark, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                       >
                         <Icon.X />
                       </button>
@@ -870,10 +916,12 @@ export default function BrotesApp() {
 
             <div style={{ marginTop: 22 }}>
               <Tag>Bitácora de crecimiento</Tag>
-              <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "10px 0" }}>
+              <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "10px 2px" }}>
                 {activePlant.history.map((h, i) => (
                   <div key={i} style={{ flexShrink: 0, textAlign: "center" }}>
-                    <img src={h.imageUrl} alt="" style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 10, border: "1px solid " + C.creamLine }} />
+                    <div style={{ padding: 4, borderRadius: 14, background: C.base, boxShadow: pressed(false, 3) }}>
+                      <img src={h.imageUrl} alt="" style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 10, display: "block" }} />
+                    </div>
                     <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: C.woodDark, margin: "4px 0 0" }}>{h.date}</p>
                   </div>
                 ))}
@@ -882,7 +930,7 @@ export default function BrotesApp() {
 
             <button
               onClick={() => openCamera("followup", activePlant.id)}
-              style={{ marginTop: 16, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: C.pine, color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              style={{ marginTop: 16, width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: C.base, boxShadow: raised(false, 5), color: C.pine, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
             >
               Tomar foto de seguimiento
             </button>

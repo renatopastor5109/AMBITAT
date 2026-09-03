@@ -1,42 +1,42 @@
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 
-// ---- Design tokens (paleta cálida: madera + oro + pino) ----
+// ---- Design tokens (paleta cálida original: madera + oro + pino) ----
 const C = {
-  gold: "#EAC468",       // (heredado, ya no se usa como lienzo principal)
+  gold: "#EAC468",        // lienzo de fondo de toda la app
   goldEdge: "#DDB556",
-  wood: "#8B5A2E",        // texto/acentos "madera"
+  wood: "#8B5A2E",         // barra de navegación / insignias
   woodDark: "#6E4522",
-  pine: "#3F5D3E",        // acento verde pino (texto, íconos activos)
-  pineDark: "#28402A",
-  cream: "#F5EFDD",
+  pine: "#3F5D3E",         // bloque inferior de la tarjeta, botones principales
+  pineDark: "#28402A",     // pantallas de cámara / análisis / resultado
+  cream: "#F5EFDD",        // bloque superior de la tarjeta
   creamLine: "#e2d7b8",
-  ink: "#3a3527",         // texto principal sobre el lienzo neumórfico
-  amber: "#C98A2E",       // estado "necesita atención"
-  rust: "#B0452F",        // estado crítico
-  coral: "#c9714f",
+  ink: "#221C13",          // texto principal
+  amber: "#D6A23D",        // estado "necesita atención"
+  rust: "#9C3B2E",         // estado crítico
+  coral: "#D98B72",        // texto de "problemas" sobre verde pino
   mossText: "#6b8257",
-
-  // ---- Neumorfismo: un solo tono de "lienzo" por modo, todo se talla con sombras ----
-  base: "#E3D3A0",            // lienzo claro (pantallas normales) — dorado más saturado
-  baseDark: "#2B382E",        // lienzo oscuro (cámara / análisis / resultado)
-  shadowDark: "#b7a26a",      // sombra oscura sobre lienzo claro — más contraste
-  shadowLight: "#fdf8e9",     // sombra clara sobre lienzo claro — cálida, no blanco puro
-  shadowDarkOnDark: "#1c261f",// sombra oscura sobre lienzo oscuro
-  shadowLightOnDark: "#3a4c3e", // sombra clara sobre lienzo oscuro
 };
 
-// Sombra doble "elevada" (el elemento parece sobresalir del lienzo)
-function raised(dark, size = 8) {
-  const d = dark ? C.shadowDarkOnDark : C.shadowDark;
-  const l = dark ? C.shadowLightOnDark : C.shadowLight;
-  return `${size}px ${size}px ${size * 2}px ${d}, -${size}px -${size}px ${size * 2}px ${l}`;
+// Pares de sombra clara/oscura por cada tono de superficie, para dar
+// look "elevado" o "hundido" sin aplanar los colores originales.
+const SHADOW_PAIRS = {
+  gold: { light: "#fbe0a0", dark: "#c9a24e" },
+  cream: { light: "#ffffff", dark: "#ddd0a8" },
+  pine: { light: "#547856", dark: "#1f331f" },
+  wood: { light: "#a97a45", dark: "#57371a" },
+  dark: { light: "#3a4c3e", dark: "#152018" }, // para pineDark (cámara/análisis)
+};
+
+// Sombra doble "elevada" (el elemento parece sobresalir de su superficie)
+function raised(surface = "gold", size = 8) {
+  const { light, dark } = SHADOW_PAIRS[surface];
+  return `${size}px ${size}px ${size * 1.8}px ${dark}, -${size}px -${size}px ${size * 1.8}px ${light}`;
 }
-// Sombra doble "hundida" (el elemento parece presionado hacia adentro del lienzo)
-function pressed(dark, size = 6) {
-  const d = dark ? C.shadowDarkOnDark : C.shadowDark;
-  const l = dark ? C.shadowLightOnDark : C.shadowLight;
-  return `inset ${size}px ${size}px ${size * 1.6}px ${d}, inset -${size}px -${size}px ${size * 1.6}px ${l}`;
+// Sombra doble "hundida" (el elemento parece presionado hacia su superficie)
+function pressed(surface = "gold", size = 6) {
+  const { light, dark } = SHADOW_PAIRS[surface];
+  return `inset ${size}px ${size}px ${size * 1.4}px ${dark}, inset -${size}px -${size}px ${size * 1.4}px ${light}`;
 }
 
 const FONTS_IMPORT = `
@@ -49,7 +49,7 @@ const FONTS_IMPORT = `
   display: flex;
   flex-direction: column;
   margin: 0 auto;
-  background: #E3D3A0;
+  background: #EAC468;
 }
 .brotes-grid {
   display: grid;
@@ -152,129 +152,125 @@ function WordmarkBadge() {
   );
 }
 
-// ---------- Tarjeta de planta: dos tonos (crema arriba / pino abajo) ----------
+// ---------- Tarjeta de planta: dos tonos (crema arriba / pino abajo), con sombra suave ----------
 function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
   const estado = ESTADO_STYLES[data.estado_general] || ESTADO_STYLES.regular;
   return (
     <div
       style={{
         borderRadius: 26,
-        background: C.base,
-        boxShadow: raised(false, compact ? 6 : 9),
-        padding: compact ? "16px 14px 14px" : "22px 22px 20px",
+        overflow: "hidden",
+        boxShadow: raised("gold", compact ? 6 : 8),
       }}
     >
-      <div style={{ display: "flex", gap: compact ? 10 : 16 }}>
-        {imageUrl && (
-          <div
-            style={{
-              width: compact ? 56 : 78,
-              height: compact ? 56 : 78,
-              borderRadius: 14,
-              padding: 4,
-              flexShrink: 0,
-              background: C.base,
-              boxShadow: pressed(false, 4),
-            }}
-          >
-            <img
-              src={imageUrl}
-              alt={data.nombre_comun}
-              style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10, display: "block" }}
-            />
-          </div>
-        )}
-        <div style={{ minWidth: 0 }}>
-          {!compact && <Tag>{data.confianza === "alta" ? "Identificación confiable" : "Identificación aproximada"}</Tag>}
-          <h2
-            style={{
-              fontFamily: "'Fraunces', serif",
-              fontWeight: 700,
-              fontSize: compact ? 16 : 24,
-              color: C.ink,
-              margin: "2px 0 0",
-              lineHeight: 1.1,
-            }}
-          >
-            {data.nombre_comun}
-          </h2>
-          {!compact && (
-            <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 14, color: "#6b6047", margin: "2px 0 0" }}>
-              {data.nombre_cientifico}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "5px 12px",
-            borderRadius: 20,
-            background: C.base,
-            boxShadow: pressed(false, 3),
-          }}
-        >
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: estado.bg }} />
-          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: estado.bg }}>{estado.label}</span>
-        </div>
-        {(() => {
-          const watering = getWateringStatus(data);
-          if (!watering) return null;
-          return (
+      {/* bloque superior: crema */}
+      <div style={{ background: C.cream, padding: compact ? "16px 14px 14px" : "22px 22px 18px" }}>
+        <div style={{ display: "flex", gap: compact ? 10 : 16 }}>
+          {imageUrl && (
             <div
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "5px 12px",
-                borderRadius: 20,
-                background: C.base,
-                boxShadow: pressed(false, 3),
+                width: compact ? 56 : 78,
+                height: compact ? 56 : 78,
+                borderRadius: 14,
+                padding: 4,
+                flexShrink: 0,
+                background: C.cream,
+                boxShadow: pressed("cream", 4),
               }}
             >
-              <span style={{ fontSize: 11 }}>💧</span>
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: watering.urgent ? C.rust : "#6b6047" }}>
-                {watering.label}
-              </span>
+              <img
+                src={imageUrl}
+                alt={data.nombre_comun}
+                style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10, display: "block" }}
+              />
             </div>
-          );
-        })()}
-      </div>
+          )}
+          <div style={{ minWidth: 0 }}>
+            {!compact && <Tag>{data.confianza === "alta" ? "Identificación confiable" : "Identificación aproximada"}</Tag>}
+            <h2
+              style={{
+                fontFamily: "'Fraunces', serif",
+                fontWeight: 700,
+                fontSize: compact ? 16 : 24,
+                color: C.ink,
+                margin: "2px 0 0",
+                lineHeight: 1.1,
+              }}
+            >
+              {data.nombre_comun}
+            </h2>
+            {!compact && (
+              <p style={{ fontFamily: "'Fraunces', serif", fontStyle: "italic", fontSize: 14, color: "#6b6047", margin: "2px 0 0" }}>
+                {data.nombre_cientifico}
+              </p>
+            )}
+          </div>
+        </div>
 
-      {!compact && (
-        <>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           <div
             style={{
-              marginTop: 18,
-              borderRadius: 16,
-              background: C.base,
-              boxShadow: pressed(false, 5),
-              padding: "14px 16px",
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 10,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "5px 12px",
+              borderRadius: 20,
+              background: estado.bg,
+              boxShadow: "0 2px 5px rgba(0,0,0,0.15)",
             }}
           >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff" }} />
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#fff" }}>{estado.label}</span>
+          </div>
+          {(() => {
+            const watering = getWateringStatus(data);
+            if (!watering) return null;
+            return (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "5px 12px",
+                  borderRadius: 20,
+                  background: C.cream,
+                  boxShadow: pressed("cream", 3),
+                }}
+              >
+                <span style={{ fontSize: 11 }}>💧</span>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 600, color: watering.urgent ? C.rust : "#6b6047" }}>
+                  {watering.label}
+                </span>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* bloque inferior: verde pino */}
+      {!compact && (
+        <div style={{ background: C.pine, padding: "18px 22px 22px", color: C.cream }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
-              <Tag>RIEGO</Tag>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: "3px 0 0" }}>{data.riego}</p>
+              <Tag color="#bcd0af">RIEGO</Tag>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, margin: "3px 0 0", opacity: 0.95 }}>
+                {data.riego}
+              </p>
             </div>
             <div>
-              <Tag>LUZ</Tag>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: "3px 0 0" }}>{data.luz}</p>
+              <Tag color="#c7d6b8">LUZ</Tag>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, margin: "3px 0 0", opacity: 0.95 }}>
+                {data.luz}
+              </p>
             </div>
           </div>
 
           {data.problemas_detectados && data.problemas_detectados.length > 0 && (
-            <div style={{ marginTop: 14, borderRadius: 16, background: C.base, boxShadow: pressed(false, 5), padding: "14px 16px" }}>
-              <Tag color={C.rust}>Se detectó</Tag>
+            <div style={{ marginTop: 16, borderTop: "1px solid rgba(245,239,221,0.2)", paddingTop: 12 }}>
+              <Tag color={C.coral}>Se detectó</Tag>
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {data.problemas_detectados.map((p, i) => (
-                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.rust, marginBottom: 3 }}>
+                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.coral, marginBottom: 3 }}>
                     {p}
                   </li>
                 ))}
@@ -283,11 +279,11 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
           )}
 
           {data.consejos && data.consejos.length > 0 && (
-            <div style={{ marginTop: 14, borderRadius: 16, background: C.base, boxShadow: pressed(false, 5), padding: "14px 16px" }}>
-              <Tag>Consejos de cuidado</Tag>
+            <div style={{ marginTop: 14, borderTop: "1px solid rgba(245,239,221,0.2)", paddingTop: 12 }}>
+              <Tag color="#c7d6b8">Consejos de cuidado</Tag>
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {data.consejos.map((c, i) => (
-                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, marginBottom: 3 }}>
+                  <li key={i} style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, marginBottom: 3, opacity: 0.95 }}>
                     {c}
                   </li>
                 ))}
@@ -305,8 +301,8 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
                 padding: "12px 0",
                 borderRadius: 14,
                 border: "none",
-                background: C.base,
-                boxShadow: saved ? pressed(false, 5) : raised(false, 5),
+                background: C.cream,
+                boxShadow: saved ? pressed("cream", 4) : raised("cream", 4),
                 color: saved ? "#8a8368" : C.pine,
                 fontFamily: "'Inter', sans-serif",
                 fontWeight: 700,
@@ -318,8 +314,9 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
             </button>
           )}
           {footer}
-        </>
+        </div>
       )}
+      {compact && <div style={{ background: C.pine, padding: "8px 14px 10px" }} />}
     </div>
   );
 }
@@ -370,8 +367,8 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         margin: "0 16px 16px",
         padding: 10,
         borderRadius: 28,
-        background: C.base,
-        boxShadow: raised(false, 7),
+        background: C.wood,
+        boxShadow: raised("wood", 6),
       }}
     >
       <button
@@ -383,17 +380,17 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 4,
-          background: C.base,
-          boxShadow: jardinActive ? pressed(false, 4) : "none",
+          background: jardinActive ? C.cream : "transparent",
+          boxShadow: jardinActive ? pressed("cream", 3) : "none",
           border: "none",
           borderRadius: 18,
           padding: "10px 0",
           cursor: "pointer",
-          color: jardinActive ? C.pine : "#9a9074",
+          color: jardinActive ? C.pine : "rgba(245,239,221,0.8)",
         }}
       >
         <Icon.Leaf />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: jardinActive ? C.ink : "#9a9074" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: jardinActive ? C.ink : "rgba(245,239,221,0.85)" }}>
           Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
         </span>
       </button>
@@ -406,17 +403,17 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 4,
-          background: C.base,
-          boxShadow: cameraActive ? pressed(false, 4) : "none",
+          background: cameraActive ? C.cream : "transparent",
+          boxShadow: cameraActive ? pressed("cream", 3) : "none",
           border: "none",
           borderRadius: 18,
           padding: "10px 0",
           cursor: "pointer",
-          color: cameraActive ? C.pine : "#9a9074",
+          color: cameraActive ? C.pine : "rgba(245,239,221,0.8)",
         }}
       >
         <Icon.Camera />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: cameraActive ? C.ink : "#9a9074" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: cameraActive ? C.ink : "rgba(245,239,221,0.85)" }}>
           Cámara
         </span>
       </button>
@@ -669,12 +666,12 @@ export default function BrotesApp() {
   const isDarkScreen = screen === "camera" || screen === "analyzing" || screen === "result";
 
   return (
-    <div style={{ minHeight: "100vh", background: C.base, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: C.gold, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
       <div className="brotes-shell">
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.baseDark, margin: 16, borderRadius: 26, boxShadow: raised(true, 8) }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.pineDark, margin: 16, borderRadius: 26, boxShadow: raised("dark", 8) }}>
             <div style={{ padding: "18px 20px 4px" }}>
               <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#a9c19c", margin: 0 }}>
                 {captureMode === "followup" ? "Seguimiento de planta" : "Nueva planta"}
@@ -689,8 +686,8 @@ export default function BrotesApp() {
                 flex: 1,
                 margin: "14px 20px",
                 borderRadius: 18,
-                background: C.baseDark,
-                boxShadow: pressed(true, 7),
+                background: C.pineDark,
+                boxShadow: pressed("dark", 7),
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -713,8 +710,8 @@ export default function BrotesApp() {
                   height: 68,
                   borderRadius: "50%",
                   border: "none",
-                  background: C.baseDark,
-                  boxShadow: raised(true, 6),
+                  background: C.pineDark,
+                  boxShadow: raised("dark", 6),
                   cursor: "pointer",
                 }}
                 aria-label="Tomar foto"
@@ -728,9 +725,9 @@ export default function BrotesApp() {
 
         {/* ---------------- ANALYZING ---------------- */}
         {screen === "analyzing" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, background: C.baseDark, margin: 16, borderRadius: 26, boxShadow: raised(true, 8) }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, background: C.pineDark, margin: 16, borderRadius: 26, boxShadow: raised("dark", 8) }}>
             {imageUrl && (
-              <div style={{ padding: 5, borderRadius: 18, background: C.baseDark, boxShadow: pressed(true, 5) }}>
+              <div style={{ padding: 5, borderRadius: 18, background: C.pineDark, boxShadow: pressed("dark", 5) }}>
                 <img src={imageUrl} alt="planta" style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 14, display: "block" }} />
               </div>
             )}
@@ -758,7 +755,7 @@ export default function BrotesApp() {
               footer={
                 <>
                   {saveError && (
-                    <p style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.rust, lineHeight: 1.4 }}>
+                    <p style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#F3DCC9", lineHeight: 1.4 }}>
                       {saveError}
                     </p>
                   )}
@@ -771,12 +768,11 @@ export default function BrotesApp() {
                       style={{
                         marginTop: 10,
                         width: "100%",
-                        padding: "11px 0",
-                        borderRadius: 14,
-                        border: "none",
-                        background: C.base,
-                        boxShadow: raised(false, 4),
-                        color: C.ink,
+                        padding: "10px 0",
+                        borderRadius: 10,
+                        border: "1px solid rgba(245,239,221,0.5)",
+                        background: "transparent",
+                        color: C.cream,
                         fontFamily: "'Inter', sans-serif",
                         fontWeight: 600,
                         fontSize: 13.5,
@@ -814,8 +810,8 @@ export default function BrotesApp() {
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    background: C.base,
-                    boxShadow: raised(false, 4),
+                    background: C.cream,
+                    boxShadow: raised("cream", 4),
                     border: "none",
                     borderRadius: 20,
                     padding: "8px 16px",
@@ -852,7 +848,7 @@ export default function BrotesApp() {
                   </p>
                   <button
                     onClick={() => openCamera("new")}
-                    style={{ marginTop: 14, background: C.base, boxShadow: raised(false, 5), color: C.pine, border: "none", borderRadius: 14, padding: "12px 22px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+                    style={{ marginTop: 14, background: C.pine, color: C.cream, boxShadow: raised("pine", 4), border: "none", borderRadius: 14, padding: "12px 22px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
                   >
                     Analizar mi primera planta
                   </button>
@@ -865,8 +861,8 @@ export default function BrotesApp() {
                     return (
                       <div
                         style={{
-                          background: C.base,
-                          boxShadow: pressed(false, 5),
+                          background: "#F3DCC9",
+                          boxShadow: raised("cream", 3),
                           borderRadius: 16,
                           padding: "12px 16px",
                           marginBottom: 16,
@@ -892,7 +888,7 @@ export default function BrotesApp() {
                           const { error } = await supabase.from("plantas").delete().eq("id", p.id);
                           if (error) console.error("Error borrando planta:", error);
                         }}
-                        style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: C.base, boxShadow: raised(false, 3), border: "none", borderRadius: "50%", width: 24, height: 24, color: C.woodDark, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: "rgba(34,28,19,0.55)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                       >
                         <Icon.X />
                       </button>
@@ -919,7 +915,7 @@ export default function BrotesApp() {
               <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "10px 2px" }}>
                 {activePlant.history.map((h, i) => (
                   <div key={i} style={{ flexShrink: 0, textAlign: "center" }}>
-                    <div style={{ padding: 4, borderRadius: 14, background: C.base, boxShadow: pressed(false, 3) }}>
+                    <div style={{ padding: 4, borderRadius: 14, background: C.cream, boxShadow: pressed("cream", 3) }}>
                       <img src={h.imageUrl} alt="" style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 10, display: "block" }} />
                     </div>
                     <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: C.woodDark, margin: "4px 0 0" }}>{h.date}</p>
@@ -930,7 +926,7 @@ export default function BrotesApp() {
 
             <button
               onClick={() => openCamera("followup", activePlant.id)}
-              style={{ marginTop: 16, width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: C.base, boxShadow: raised(false, 5), color: C.pine, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              style={{ marginTop: 16, width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: C.pine, boxShadow: raised("pine", 5), color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
             >
               Tomar foto de seguimiento
             </button>

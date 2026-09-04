@@ -18,26 +18,7 @@ const C = {
   mossText: "#6b8257",
 };
 
-// Pares de sombra clara/oscura por cada tono de superficie, para dar
-// look "elevado" o "hundido" sin aplanar los colores originales.
-const SHADOW_PAIRS = {
-  gold: { light: "#fbe0a0", dark: "#c9a24e" },
-  cream: { light: "#ffffff", dark: "#ddd0a8" },
-  pine: { light: "#547856", dark: "#1f331f" },
-  wood: { light: "#a97a45", dark: "#57371a" },
-  dark: { light: "#3a4c3e", dark: "#152018" }, // para pineDark (cámara/análisis)
-};
-
-// Sombra doble "elevada" (el elemento parece sobresalir de su superficie)
-function raised(surface = "gold", size = 8) {
-  const { light, dark } = SHADOW_PAIRS[surface];
-  return `${size}px ${size}px ${size * 1.8}px ${dark}, -${size}px -${size}px ${size * 1.8}px ${light}`;
-}
-// Sombra doble "hundida" (el elemento parece presionado hacia su superficie)
-function pressed(surface = "gold", size = 6) {
-  const { light, dark } = SHADOW_PAIRS[surface];
-  return `inset ${size}px ${size}px ${size * 1.4}px ${dark}, inset -${size}px -${size}px ${size * 1.4}px ${light}`;
-}
+// (Se probó un estilo neumórfico y se revirtió — la app usa sombras planas simples)
 
 const FONTS_IMPORT = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
@@ -160,30 +141,25 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
       style={{
         borderRadius: 26,
         overflow: "hidden",
-        boxShadow: raised("gold", compact ? 6 : 8),
+        boxShadow: "0 10px 0 " + C.woodDark + "33, 0 14px 24px -10px rgba(40,64,42,0.5)",
       }}
     >
       {/* bloque superior: crema */}
       <div style={{ background: C.cream, padding: compact ? "16px 14px 14px" : "22px 22px 18px" }}>
         <div style={{ display: "flex", gap: compact ? 10 : 16 }}>
           {imageUrl && (
-            <div
+            <img
+              src={imageUrl}
+              alt={data.nombre_comun}
               style={{
                 width: compact ? 56 : 78,
                 height: compact ? 56 : 78,
-                borderRadius: 14,
-                padding: 4,
+                objectFit: "cover",
+                borderRadius: 12,
+                border: "1px solid " + C.creamLine,
                 flexShrink: 0,
-                background: C.cream,
-                boxShadow: pressed("cream", 4),
               }}
-            >
-              <img
-                src={imageUrl}
-                alt={data.nombre_comun}
-                style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10, display: "block" }}
-              />
-            </div>
+            />
           )}
           <div style={{ minWidth: 0 }}>
             {!compact && <Tag>{data.confianza === "alta" ? "Identificación confiable" : "Identificación aproximada"}</Tag>}
@@ -233,8 +209,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
                   gap: 5,
                   padding: "5px 12px",
                   borderRadius: 20,
-                  background: C.cream,
-                  boxShadow: pressed("cream", 3),
+                  background: watering.urgent ? "#F3DCC9" : C.creamLine,
                 }}
               >
                 <span style={{ fontSize: 11 }}>💧</span>
@@ -301,9 +276,8 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact }) {
                 padding: "12px 0",
                 borderRadius: 14,
                 border: "none",
-                background: C.cream,
-                boxShadow: saved ? pressed("cream", 4) : raised("cream", 4),
-                color: saved ? "#8a8368" : C.pine,
+                background: saved ? "rgba(245,239,221,0.35)" : C.cream,
+                color: saved ? C.cream : C.pine,
                 fontFamily: "'Inter', sans-serif",
                 fontWeight: 700,
                 fontSize: 13.5,
@@ -368,7 +342,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         padding: 10,
         borderRadius: 28,
         background: C.wood,
-        boxShadow: raised("wood", 6),
+        boxShadow: "0 6px 0 " + C.woodDark,
       }}
     >
       <button
@@ -381,7 +355,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           justifyContent: "center",
           gap: 4,
           background: jardinActive ? C.cream : "transparent",
-          boxShadow: jardinActive ? pressed("cream", 3) : "none",
+          boxShadow: "none",
           border: "none",
           borderRadius: 18,
           padding: "10px 0",
@@ -404,7 +378,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           justifyContent: "center",
           gap: 4,
           background: cameraActive ? C.cream : "transparent",
-          boxShadow: cameraActive ? pressed("cream", 3) : "none",
+          boxShadow: "none",
           border: "none",
           borderRadius: 18,
           padding: "10px 0",
@@ -437,6 +411,28 @@ export default function BrotesApp() {
   const [garden, setGarden] = useState([]);
   const [userId, setUserId] = useState(null);
   const [notifStatus, setNotifStatus] = useState("checking"); // checking | unsupported | default | denied | subscribed
+  const [sugerenciaTexto, setSugerenciaTexto] = useState("");
+  const [sugerenciaEnviando, setSugerenciaEnviando] = useState(false);
+  const [sugerenciaEnviada, setSugerenciaEnviada] = useState(false);
+  const [sugerenciaError, setSugerenciaError] = useState(null);
+
+  async function enviarSugerencia() {
+    if (!sugerenciaTexto.trim()) return;
+    setSugerenciaEnviando(true);
+    setSugerenciaError(null);
+    const { error } = await supabase.from("sugerencias").insert({
+      user_id: userId,
+      mensaje: sugerenciaTexto.trim(),
+    });
+    setSugerenciaEnviando(false);
+    if (error) {
+      console.error("Error enviando sugerencia:", error);
+      setSugerenciaError("No pudimos enviar tu mensaje. Intenta de nuevo en un momento.");
+      return;
+    }
+    setSugerenciaEnviada(true);
+    setSugerenciaTexto("");
+  }
   const [loadingGarden, setLoadingGarden] = useState(true);
   const [capturedFile, setCapturedFile] = useState(null);
   const fileRef = useRef(null);
@@ -671,7 +667,7 @@ export default function BrotesApp() {
       <div className="brotes-shell">
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.pineDark, margin: 16, borderRadius: 26, boxShadow: raised("dark", 8) }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.pineDark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
             <div style={{ padding: "18px 20px 4px" }}>
               <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "#a9c19c", margin: 0 }}>
                 {captureMode === "followup" ? "Seguimiento de planta" : "Nueva planta"}
@@ -686,17 +682,17 @@ export default function BrotesApp() {
                 flex: 1,
                 margin: "14px 20px",
                 borderRadius: 18,
-                background: C.pineDark,
-                boxShadow: pressed("dark", 7),
+                border: "1px dashed rgba(245,239,221,0.3)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 minHeight: 260,
+                background: "radial-gradient(circle at 50% 30%, #345a37 0%, #1f3521 75%)",
               }}
             >
               <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
-                <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke={C.cream} strokeWidth="1.4" opacity="0.5" />
-                <circle cx="12" cy="13" r="3.4" stroke={C.cream} strokeWidth="1.4" opacity="0.5" />
+                <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke={C.cream} strokeWidth="1.4" opacity="0.7" />
+                <circle cx="12" cy="13" r="3.4" stroke={C.cream} strokeWidth="1.4" opacity="0.7" />
               </svg>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "10px 30px 26px" }}>
@@ -705,15 +701,7 @@ export default function BrotesApp() {
               </button>
               <button
                 onClick={() => fileRef.current?.click()}
-                style={{
-                  width: 68,
-                  height: 68,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: C.pineDark,
-                  boxShadow: raised("dark", 6),
-                  cursor: "pointer",
-                }}
+                style={{ width: 66, height: 66, borderRadius: "50%", border: "4px solid " + C.cream, background: "transparent", cursor: "pointer" }}
                 aria-label="Tomar foto"
               />
               <div style={{ width: 22 }} />
@@ -725,12 +713,8 @@ export default function BrotesApp() {
 
         {/* ---------------- ANALYZING ---------------- */}
         {screen === "analyzing" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, background: C.pineDark, margin: 16, borderRadius: 26, boxShadow: raised("dark", 8) }}>
-            {imageUrl && (
-              <div style={{ padding: 5, borderRadius: 18, background: C.pineDark, boxShadow: pressed("dark", 5) }}>
-                <img src={imageUrl} alt="planta" style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 14, display: "block" }} />
-              </div>
-            )}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18, background: C.pineDark, margin: 16, borderRadius: 26 }}>
+            {imageUrl && <img src={imageUrl} alt="planta" style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 14, opacity: 0.9 }} />}
             <div style={{ display: "flex", gap: 6 }}>
               {[0, 1, 2].map((i) => (
                 <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: C.cream, animation: `pulse 1.1s ${i * 0.15}s infinite ease-in-out` }} />
@@ -810,9 +794,8 @@ export default function BrotesApp() {
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
-                    background: C.cream,
-                    boxShadow: raised("cream", 4),
-                    border: "none",
+                    background: "transparent",
+                    border: "1px solid " + C.woodDark,
                     borderRadius: 20,
                     padding: "8px 16px",
                     cursor: "pointer",
@@ -835,6 +818,23 @@ export default function BrotesApp() {
                   Los permisos de notificación están bloqueados en tu navegador.
                 </p>
               )}
+              <button
+                onClick={() => setScreen("sugerencias")}
+                style={{
+                  alignSelf: "center",
+                  background: "transparent",
+                  border: "none",
+                  color: C.woodDark,
+                  textDecoration: "underline",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  padding: 4,
+                  opacity: 0.85,
+                }}
+              >
+                💬 ¿Tienes una idea o algo no funciona? Cuéntanos
+              </button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 20px" }}>
               {loadingGarden ? (
@@ -848,7 +848,7 @@ export default function BrotesApp() {
                   </p>
                   <button
                     onClick={() => openCamera("new")}
-                    style={{ marginTop: 14, background: C.pine, color: C.cream, boxShadow: raised("pine", 4), border: "none", borderRadius: 14, padding: "12px 22px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+                    style={{ marginTop: 14, background: C.pine, color: C.cream, border: "none", borderRadius: 12, padding: "11px 20px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
                   >
                     Analizar mi primera planta
                   </button>
@@ -862,10 +862,9 @@ export default function BrotesApp() {
                       <div
                         style={{
                           background: "#F3DCC9",
-                          boxShadow: raised("cream", 3),
-                          borderRadius: 16,
+                          borderRadius: 14,
                           padding: "12px 16px",
-                          marginBottom: 16,
+                          marginBottom: 14,
                           display: "flex",
                           alignItems: "center",
                           gap: 10,
@@ -915,9 +914,7 @@ export default function BrotesApp() {
               <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "10px 2px" }}>
                 {activePlant.history.map((h, i) => (
                   <div key={i} style={{ flexShrink: 0, textAlign: "center" }}>
-                    <div style={{ padding: 4, borderRadius: 14, background: C.cream, boxShadow: pressed("cream", 3) }}>
-                      <img src={h.imageUrl} alt="" style={{ width: 58, height: 58, objectFit: "cover", borderRadius: 10, display: "block" }} />
-                    </div>
+                    <img src={h.imageUrl} alt="" style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 10, border: "1px solid " + C.creamLine }} />
                     <p style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9.5, color: C.woodDark, margin: "4px 0 0" }}>{h.date}</p>
                   </div>
                 ))}
@@ -926,10 +923,98 @@ export default function BrotesApp() {
 
             <button
               onClick={() => openCamera("followup", activePlant.id)}
-              style={{ marginTop: 16, width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: C.pine, boxShadow: raised("pine", 5), color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              style={{ marginTop: 16, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: C.pine, color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
             >
               Tomar foto de seguimiento
             </button>
+          </div>
+        )}
+
+        {/* ---------------- BUZÓN DE SUGERENCIAS ---------------- */}
+        {screen === "sugerencias" && (
+          <div style={{ padding: "18px 16px 20px", flex: 1, overflowY: "auto" }}>
+            <button
+              onClick={() => {
+                setScreen("jardin");
+                setSugerenciaEnviada(false);
+                setSugerenciaError(null);
+              }}
+              style={{ background: "none", border: "none", color: C.woodDark, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "6px 0 16px" }}
+            >
+              <Icon.Back /> <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, fontWeight: 700 }}>Mi jardín</span>
+            </button>
+
+            <div style={{ background: C.cream, borderRadius: 20, padding: "22px 20px", boxShadow: "0 8px 0 " + C.woodDark + "22, 0 12px 20px -10px rgba(40,64,42,0.4)" }}>
+              <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, color: C.ink, margin: "0 0 8px" }}>
+                Buzón de sugerencias 💬
+              </h1>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: "#5c5646", lineHeight: 1.55, margin: "0 0 18px" }}>
+                Ámbitat todavía se está construyendo, y queremos darte la mejor experiencia posible. Si algo no funcionó
+                como esperabas, si te faltó información, o si tienes una idea que nos ayude a mejorar, cuéntanos aquí —
+                lo leemos todo.
+              </p>
+
+              {sugerenciaEnviada ? (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <p style={{ fontSize: 28, margin: "0 0 8px" }}>🌱</p>
+                  <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 16, color: C.ink, margin: 0 }}>
+                    ¡Gracias por tu mensaje!
+                  </p>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#6b6047", marginTop: 6 }}>
+                    Lo vamos a tomar en cuenta para seguir mejorando la app.
+                  </p>
+                  <button
+                    onClick={() => setSugerenciaEnviada(false)}
+                    style={{ marginTop: 16, background: "transparent", border: "1px solid " + C.woodDark, borderRadius: 12, padding: "9px 18px", color: C.woodDark, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                  >
+                    Enviar otro mensaje
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    value={sugerenciaTexto}
+                    onChange={(e) => setSugerenciaTexto(e.target.value)}
+                    placeholder="Ej. me gustaría poder editar el nombre de mi planta, o la cámara se traba en mi celular..."
+                    rows={5}
+                    style={{
+                      width: "100%",
+                      border: "1px solid " + C.creamLine,
+                      borderRadius: 10,
+                      padding: 12,
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                      color: C.ink,
+                      resize: "none",
+                      boxSizing: "border-box",
+                      background: "#fff",
+                    }}
+                  />
+                  {sugerenciaError && (
+                    <p style={{ color: C.rust, fontFamily: "'Inter', sans-serif", fontSize: 12.5, marginTop: 8 }}>{sugerenciaError}</p>
+                  )}
+                  <button
+                    onClick={enviarSugerencia}
+                    disabled={!sugerenciaTexto.trim() || sugerenciaEnviando}
+                    style={{
+                      marginTop: 14,
+                      width: "100%",
+                      padding: "12px 0",
+                      borderRadius: 12,
+                      border: "none",
+                      background: !sugerenciaTexto.trim() || sugerenciaEnviando ? "#c9c2a8" : C.pine,
+                      color: C.cream,
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      cursor: !sugerenciaTexto.trim() || sugerenciaEnviando ? "default" : "pointer",
+                    }}
+                  >
+                    {sugerenciaEnviando ? "Enviando..." : "Enviar sugerencia"}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
 

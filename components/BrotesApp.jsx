@@ -266,6 +266,25 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
             );
           })()}
         </div>
+
+        {!compact && data.advertencia && (
+          <div
+            style={{
+              marginTop: 12,
+              background: "#F3DCC9",
+              borderRadius: 10,
+              padding: "9px 12px",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 13 }}>⚠️</span>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.rust, margin: 0, lineHeight: 1.4 }}>
+              {data.advertencia}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* bloque inferior: verde pino */}
@@ -774,6 +793,9 @@ export default function BrotesApp() {
               <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 21, color: C.cream, margin: "2px 0 0" }}>
                 {captureMode === "followup" ? "¿Cómo va hoy?" : "Enfoca tu planta"}
               </h1>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "rgba(245,239,221,0.7)", margin: "8px 0 0", lineHeight: 1.4 }}>
+                💡 Con luz de día y una sola planta en el encuadre, el análisis sale más preciso.
+              </p>
               {error && <p style={{ color: "#e3a08c", fontSize: 12.5, marginTop: 8 }}>{error}</p>}
             </div>
             <div

@@ -490,6 +490,7 @@ export default function BrotesApp() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
   const [garden, setGarden] = useState([]);
@@ -636,6 +637,8 @@ export default function BrotesApp() {
     setResult(null);
     setImageUrl(null);
     setIsSaved(false);
+    setIsSaving(false);
+    setSaveError(null);
     setScreen("camera");
   }
 
@@ -659,6 +662,9 @@ export default function BrotesApp() {
       const parsed = await response.json();
       setResult(parsed);
       setScreen("result");
+      // Se guarda solo, sin que la persona tenga que tocar nada — antes era
+      // un paso manual y mucha gente se quedaba sin guardar su planta.
+      saveAnalysis(parsed, url, file);
     } catch (err) {
       console.error(err);
       setError("No pudimos analizar la foto. Intenta con otra imagen más clara.");
@@ -666,20 +672,22 @@ export default function BrotesApp() {
     }
   }
 
-  async function handleSaveResult() {
-    if (!result || !userId) return;
+  async function saveAnalysis(resultData, imgUrl, file) {
+    if (!resultData || !userId) return;
     setSaveError(null);
+    setIsSaving(true);
 
-    let publicUrl = imageUrl;
-    if (capturedFile) {
-      const path = `${userId}/${Date.now()}-${capturedFile.name}`;
-      const { error: uploadError } = await supabase.storage.from("plant-photos").upload(path, capturedFile);
+    let publicUrl = imgUrl;
+    if (file) {
+      const path = `${userId}/${Date.now()}-${file.name}`;
+      const { error: uploadError } = await supabase.storage.from("plant-photos").upload(path, file);
       if (!uploadError) {
         const { data } = supabase.storage.from("plant-photos").getPublicUrl(path);
         publicUrl = data.publicUrl;
       } else {
         console.error("Error subiendo foto:", uploadError);
-        setSaveError("No pudimos guardar la foto (revisa que exista el bucket 'plant-photos' en Supabase, marcado como público). Nada se guardó todavía — puedes intentar de nuevo.");
+        setIsSaving(false);
+        setSaveError("No pudimos guardar la foto (revisa que exista el bucket 'plant-photos' en Supabase, marcado como público).");
         return;
       }
     }
@@ -688,7 +696,7 @@ export default function BrotesApp() {
       date: new Date().toLocaleDateString("es-MX"),
       dateISO: new Date().toISOString(),
       imageUrl: publicUrl,
-      estado_general: result.estado_general,
+      estado_general: resultData.estado_general,
     };
 
     if (captureMode === "followup" && followupPlantId) {
@@ -697,48 +705,55 @@ export default function BrotesApp() {
       const { error } = await supabase
         .from("plantas")
         .update({
-          nombre_comun: result.nombre_comun,
-          nombre_cientifico: result.nombre_cientifico,
-          confianza: result.confianza,
-          estado_general: result.estado_general,
-          riego: result.riego,
-          dias_entre_riegos: result.dias_entre_riegos,
-          luz: result.luz,
-          problemas_detectados: result.problemas_detectados,
-          consejos: result.consejos,
+          nombre_comun: resultData.nombre_comun,
+          nombre_cientifico: resultData.nombre_cientifico,
+          confianza: resultData.confianza,
+          estado_general: resultData.estado_general,
+          riego: resultData.riego,
+          dias_entre_riegos: resultData.dias_entre_riegos,
+          luz: resultData.luz,
+          problemas_detectados: resultData.problemas_detectados,
+          consejos: resultData.consejos,
           image_url: publicUrl,
           historial: newHistory,
         })
         .eq("id", followupPlantId);
       if (!error) {
-        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...result, imageUrl: publicUrl, history: newHistory } : p)));
+        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...resultData, imageUrl: publicUrl, history: newHistory } : p)));
       } else {
         console.error("Error actualizando planta:", error);
+        setIsSaving(false);
+        setSaveError("No pudimos actualizar tu planta. Intenta de nuevo.");
+        return;
       }
     } else {
       const newId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
       const { error } = await supabase.from("plantas").insert({
         id: newId,
         user_id: userId,
-        nombre_comun: result.nombre_comun,
-        nombre_cientifico: result.nombre_cientifico,
-        confianza: result.confianza,
-        estado_general: result.estado_general,
-        riego: result.riego,
-        dias_entre_riegos: result.dias_entre_riegos,
-        luz: result.luz,
-        problemas_detectados: result.problemas_detectados,
-        consejos: result.consejos,
+        nombre_comun: resultData.nombre_comun,
+        nombre_cientifico: resultData.nombre_cientifico,
+        confianza: resultData.confianza,
+        estado_general: resultData.estado_general,
+        riego: resultData.riego,
+        dias_entre_riegos: resultData.dias_entre_riegos,
+        luz: resultData.luz,
+        problemas_detectados: resultData.problemas_detectados,
+        consejos: resultData.consejos,
         image_url: publicUrl,
         historial: [historyEntry],
       });
       if (!error) {
-        setGarden((prev) => [...prev, { ...result, id: newId, imageUrl: publicUrl, history: [historyEntry] }]);
+        setGarden((prev) => [...prev, { ...resultData, id: newId, imageUrl: publicUrl, history: [historyEntry] }]);
       } else {
         console.error("Error guardando planta:", error);
+        setIsSaving(false);
+        setSaveError("No pudimos guardar tu planta. Intenta de nuevo.");
+        return;
       }
     }
     setImageUrl(publicUrl);
+    setIsSaving(false);
     setIsSaved(true);
   }
 
@@ -818,16 +833,44 @@ export default function BrotesApp() {
             <PlantCard
               data={result}
               imageUrl={imageUrl}
-              saved={isSaved}
-              onSave={handleSaveResult}
               footer={
                 <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    {isSaving && (
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(245,239,221,0.85)", margin: 0 }}>
+                        Guardando en tu jardín...
+                      </p>
+                    )}
+                    {isSaved && !isSaving && (
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: C.cream, margin: 0 }}>
+                        ✓ Guardado en tu jardín
+                      </p>
+                    )}
+                  </div>
                   {saveError && (
-                    <p style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#F3DCC9", lineHeight: 1.4 }}>
-                      {saveError}
-                    </p>
+                    <div style={{ marginTop: 8 }}>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#F3DCC9", lineHeight: 1.4, margin: "0 0 8px" }}>
+                        {saveError}
+                      </p>
+                      <button
+                        onClick={() => saveAnalysis(result, imageUrl, capturedFile)}
+                        style={{
+                          background: "transparent",
+                          border: "1px solid rgba(245,239,221,0.5)",
+                          borderRadius: 10,
+                          padding: "8px 16px",
+                          color: C.cream,
+                          fontFamily: "'Inter', sans-serif",
+                          fontWeight: 600,
+                          fontSize: 13,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Reintentar guardado
+                      </button>
+                    </div>
                   )}
-                  {isSaved && (
+                  {isSaved && !isSaving && (
                     <button
                       onClick={() => {
                         if (captureMode === "followup") setSelectedPlant(followupPlantId);

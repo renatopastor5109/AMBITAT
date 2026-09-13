@@ -14,8 +14,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Método no permitido" });
   }
 
-  const { imageBase64, mediaType } = req.body || {};
-  if (!imageBase64) {
+  // Acepta el formato nuevo (varias fotos) y sigue aceptando el viejo
+  // (una sola foto) por si algo todavía manda el formato anterior.
+  const { images, imageBase64, mediaType } = req.body || {};
+  const photos = images && images.length ? images : imageBase64 ? [{ base64: imageBase64, mediaType }] : [];
+
+  if (photos.length === 0) {
     return res.status(400).json({ error: "Falta la imagen" });
   }
 
@@ -25,6 +29,16 @@ export default async function handler(req, res) {
   }
 
   try {
+    const imageBlocks = photos.map((p) => ({
+      type: "image",
+      source: { type: "base64", media_type: p.mediaType || "image/jpeg", data: p.base64 },
+    }));
+
+    const instrucciones =
+      photos.length > 1
+        ? `Identifica esta planta y evalúa su estado de salud. Te mando ${photos.length} fotos de la MISMA planta desde distintos ángulos (por ejemplo hoja de cerca, planta completa, tallo) —úsalas en conjunto para dar una identificación más precisa, no las trates como plantas distintas.`
+        : "Identifica esta planta y evalúa su estado de salud.";
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -36,15 +50,12 @@ export default async function handler(req, res) {
         model: "claude-sonnet-5",
         max_tokens: 1000,
         system:
-          "Eres un botánico experto. Analiza la foto de una planta y responde SOLO con un objeto JSON válido, sin texto adicional ni backticks de markdown. Claves exactas: nombre_comun (string), nombre_cientifico (string), confianza ('alta'|'media'|'baja'), estado_general ('saludable'|'regular'|'critico'), riego (string breve describiendo el riego), dias_entre_riegos (número entero: tu mejor estimación de cada cuántos días se debe regar esta planta según su especie y el clima promedio), luz (string breve), problemas_detectados (array de strings, vacío si no hay), consejos (array de 2 a 4 strings), advertencia (string o null). " +
-          "Reglas importantes: si la foto tiene poca luz, está borrosa, o hay varias plantas juntas y no es clara cuál es la principal, NO inventes una identificación segura — baja el campo confianza a 'baja', concéntrate en la planta más grande o más centrada en el encuadre, y usa el campo advertencia para explicarlo brevemente en una frase (ej. 'La foto está algo oscura, esto puede afectar la precisión' o 'Detecté varias plantas juntas, analicé la más cercana al centro'). Si la foto es clara y solo tiene una planta, advertencia debe ser null. Responde en español.",
+          "Eres un botánico experto. Analiza la(s) foto(s) de una planta y responde SOLO con un objeto JSON válido, sin texto adicional ni backticks de markdown. Claves exactas: nombre_comun (string), nombre_cientifico (string), confianza ('alta'|'media'|'baja'), estado_general ('saludable'|'regular'|'critico'), riego (string breve describiendo el riego), dias_entre_riegos (número entero: tu mejor estimación de cada cuántos días se debe regar esta planta según su especie y el clima promedio), luz (string breve), problemas_detectados (array de strings, vacío si no hay), causa_probable (string o null: si detectaste algún problema, explica en una frase breve la causa más probable de por qué se ve así, por ejemplo 'las hojas amarillas suelen deberse a exceso de riego' — null si la planta está saludable), consejos (array de 2 a 4 strings), advertencia (string o null). " +
+          "Reglas importantes: si recibes varias fotos, son distintos ángulos de LA MISMA planta — combina la información de todas para una identificación más segura (por ejemplo, sube la confianza si varias fotos confirman lo mismo). Si aun con varias fotos la luz es mala, están borrosas, o no es clara cuál es la planta principal, NO inventes una identificación segura — baja el campo confianza a 'baja' y usa el campo advertencia para explicarlo brevemente en una frase. Si las fotos son claras, advertencia debe ser null. Responde en español.",
         messages: [
           {
             role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: imageBase64 } },
-              { type: "text", text: "Identifica esta planta y evalúa su estado de salud." },
-            ],
+            content: [...imageBlocks, { type: "text", text: instrucciones }],
           },
         ],
       }),

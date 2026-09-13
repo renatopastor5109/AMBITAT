@@ -265,6 +265,23 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
               </div>
             );
           })()}
+          {!compact && data.racha_riego >= 2 && (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "5px 12px",
+                borderRadius: 20,
+                background: "#F5DFA8",
+              }}
+            >
+              <span style={{ fontSize: 11 }}>🔥</span>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: "#8a5a1e" }}>
+                Racha de {data.racha_riego}
+              </span>
+            </div>
+          )}
         </div>
 
         {!compact && data.advertencia && (
@@ -315,6 +332,15 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {data.causa_probable && (
+            <div style={{ marginTop: 14, borderTop: "1px solid rgba(245,239,221,0.2)", paddingTop: 12 }}>
+              <Tag color="#c7d6b8">Por qué se ve así</Tag>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.cream, margin: "6px 0 0", opacity: 0.95 }}>
+                {data.causa_probable}
+              </p>
             </div>
           )}
 
@@ -407,7 +433,7 @@ const Icon = {
 // ---------- Nav inferior flotante ----------
 function BottomNav({ screen, setScreen, gardenCount }) {
   const jardinActive = screen === "jardin";
-  const cameraActive = screen === "camera" || screen === "crop" || screen === "analyzing" || screen === "result";
+  const cameraActive = screen === "camera" || screen === "fotos" || screen === "analyzing" || screen === "result";
   return (
     <div
       style={{
@@ -485,10 +511,21 @@ export default function BrotesApp() {
       setEditingName(false);
       return;
     }
+    const nombreAnterior = garden.find((p) => p.id === plantId)?.nombre_comun || null;
     const { error } = await supabase.from("plantas").update({ nombre_comun: nuevoNombre }).eq("id", plantId);
     if (!error) {
       setGarden((prev) => prev.map((p) => (p.id === plantId ? { ...p, nombre_comun: nuevoNombre } : p)));
       setEditingName(false);
+      // Registro aparte de la corrección — para que más adelante se pueda ver
+      // qué nombres suele fallar la IA y mejorar el prompt con esos casos reales.
+      if (nombreAnterior && nombreAnterior !== nuevoNombre) {
+        const { error: logError } = await supabase.from("correcciones").insert({
+          planta_id: plantId,
+          nombre_anterior: nombreAnterior,
+          nombre_nuevo: nuevoNombre,
+        });
+        if (logError) console.error("Error registrando corrección:", logError);
+      }
     } else {
       console.error("Error actualizando nombre:", error);
     }
@@ -539,26 +576,8 @@ export default function BrotesApp() {
   }
   const [loadingGarden, setLoadingGarden] = useState(true);
   const [capturedFile, setCapturedFile] = useState(null);
-  const [cropFile, setCropFile] = useState(null);
-  const [cropImgUrl, setCropImgUrl] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [darkWarning, setDarkWarning] = useState(false);
-  const dragRef = useRef(null);
-
-  function onCropPointerDown(e) {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }
-  function onCropPointerMove(e) {
-    if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
-    setPan({ x: dragRef.current.panX + dx, y: dragRef.current.panY + dy });
-  }
-  function onCropPointerUp() {
-    dragRef.current = null;
-  }
+  const [photoFiles, setPhotoFiles] = useState([]);
+  const [photoUrls, setPhotoUrls] = useState([]);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
 
@@ -574,6 +593,8 @@ export default function BrotesApp() {
       luz: row.luz,
       problemas_detectados: row.problemas_detectados || [],
       consejos: row.consejos || [],
+      causa_probable: row.causa_probable || null,
+      racha_riego: row.racha_riego || 0,
       imageUrl: row.image_url,
       history: row.historial || [],
     };
@@ -678,96 +699,45 @@ export default function BrotesApp() {
     setIsSaved(false);
     setIsSaving(false);
     setSaveError(null);
-    setCropFile(null);
-    setCropImgUrl(null);
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setDarkWarning(false);
+    setPhotoFiles([]);
+    setPhotoUrls([]);
     setScreen("camera");
   }
 
   function handleFile(e) {
     const file = e.target.files?.[0];
+    e.target.value = ""; // para poder volver a elegir el mismo archivo si hace falta
     if (!file) return;
     setError(null);
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    setDarkWarning(false);
-    setCropFile(file);
-    setCropImgUrl(URL.createObjectURL(file));
-    setScreen("crop");
+    setPhotoFiles((prev) => [...prev, file].slice(0, 3));
+    setPhotoUrls((prev) => [...prev, URL.createObjectURL(file)].slice(0, 3));
+    setScreen("fotos");
   }
 
-  // Dibuja exactamente lo que la persona ve en el recuadro de recorte (con su
-  // zoom y posición) en un canvas cuadrado, y de ahí saca el archivo final.
-  function buildCroppedFile() {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const OUT = 800;
-        const VIEW = 280;
-        const k = OUT / VIEW;
-        const baseScale = Math.max(VIEW / img.width, VIEW / img.height);
-        const canvas = document.createElement("canvas");
-        canvas.width = OUT;
-        canvas.height = OUT;
-        const ctx = canvas.getContext("2d");
-        ctx.translate(OUT / 2 + pan.x * k, OUT / 2 + pan.y * k);
-        ctx.scale(baseScale * zoom * k, baseScale * zoom * k);
-        ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
-        // Revisa qué tan oscura salió la foto recortada (muestreo simple de brillo)
-        const { data } = ctx.getImageData(0, 0, OUT, OUT);
-        let total = 0;
-        let count = 0;
-        for (let i = 0; i < data.length; i += 40) {
-          total += (data[i] + data[i + 1] + data[i + 2]) / 3;
-          count++;
-        }
-        const brightness = total / count;
-
-        canvas.toBlob(
-          (blob) => {
-            const croppedFile = new File([blob], "planta.jpg", { type: "image/jpeg" });
-            resolve({ file: croppedFile, dark: brightness < 60 });
-          },
-          "image/jpeg",
-          0.9
-        );
-      };
-      img.src = cropImgUrl;
-    });
+  function removePhoto(i) {
+    setPhotoFiles((prev) => prev.filter((_, idx) => idx !== i));
+    setPhotoUrls((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  async function confirmCrop() {
-    const { file, dark } = await buildCroppedFile();
-    if (dark && !darkWarning) {
-      setDarkWarning(true); // primero avisa; si insiste, se manda de todas formas
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setCapturedFile(file);
-    setImageUrl(url);
+  function confirmPhotos() {
+    if (photoFiles.length === 0) return;
+    const mainUrl = photoUrls[0];
+    setCapturedFile(photoFiles[0]);
+    setImageUrl(mainUrl);
     setScreen("analyzing");
-    analyzePhoto(file, url);
+    analyzePhoto(photoFiles, mainUrl);
   }
 
-  function useFullPhoto() {
-    const url = cropImgUrl;
-    setCapturedFile(cropFile);
-    setImageUrl(url);
-    setScreen("analyzing");
-    analyzePhoto(cropFile, url);
-  }
-
-  async function analyzePhoto(file, url) {
+  async function analyzePhoto(files, url) {
     setError(null);
     try {
-      const b64 = await fileToBase64(file);
+      const images = await Promise.all(
+        files.map(async (f) => ({ base64: await fileToBase64(f), mediaType: f.type || "image/jpeg" }))
+      );
       const response = await fetch("/api/analizar-planta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: b64, mediaType: file.type || "image/jpeg" }),
+        body: JSON.stringify({ images }),
       });
       if (!response.ok) throw new Error("Error del servidor");
       const parsed = await response.json();
@@ -775,7 +745,7 @@ export default function BrotesApp() {
       setScreen("result");
       // Se guarda solo, sin que la persona tenga que tocar nada — antes era
       // un paso manual y mucha gente se quedaba sin guardar su planta.
-      saveAnalysis(parsed, url, file);
+      saveAnalysis(parsed, url, files[0]);
     } catch (err) {
       console.error(err);
       setError("No pudimos analizar la foto. Intenta con otra imagen más clara.");
@@ -813,6 +783,10 @@ export default function BrotesApp() {
     if (captureMode === "followup" && followupPlantId) {
       const plant = garden.find((p) => p.id === followupPlantId);
       const newHistory = [...(plant?.history || []), historyEntry];
+      // Racha: si esta foto de seguimiento llega ANTES de que la planta se
+      // pusiera en riesgo por falta de agua, suma un riego a tiempo seguido.
+      const estabaAtrasada = getWateringStatus(plant)?.urgent;
+      const nuevaRacha = estabaAtrasada ? 0 : (plant?.racha_riego || 0) + 1;
       const { error } = await supabase
         .from("plantas")
         .update({
@@ -825,12 +799,14 @@ export default function BrotesApp() {
           luz: resultData.luz,
           problemas_detectados: resultData.problemas_detectados,
           consejos: resultData.consejos,
+          causa_probable: resultData.causa_probable || null,
+          racha_riego: nuevaRacha,
           image_url: publicUrl,
           historial: newHistory,
         })
         .eq("id", followupPlantId);
       if (!error) {
-        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...resultData, imageUrl: publicUrl, history: newHistory } : p)));
+        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...resultData, racha_riego: nuevaRacha, imageUrl: publicUrl, history: newHistory } : p)));
       } else {
         console.error("Error actualizando planta:", error);
         setIsSaving(false);
@@ -851,11 +827,13 @@ export default function BrotesApp() {
         luz: resultData.luz,
         problemas_detectados: resultData.problemas_detectados,
         consejos: resultData.consejos,
+        causa_probable: resultData.causa_probable || null,
+        racha_riego: 0,
         image_url: publicUrl,
         historial: [historyEntry],
       });
       if (!error) {
-        setGarden((prev) => [...prev, { ...resultData, id: newId, imageUrl: publicUrl, history: [historyEntry] }]);
+        setGarden((prev) => [...prev, { ...resultData, id: newId, racha_riego: 0, imageUrl: publicUrl, history: [historyEntry] }]);
       } else {
         console.error("Error guardando planta:", error);
         setIsSaving(false);
@@ -925,88 +903,65 @@ export default function BrotesApp() {
         )}
 
         {/* ---------------- RECORTAR ---------------- */}
-        {screen === "crop" && cropImgUrl && (
+        {screen === "fotos" && photoUrls.length > 0 && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", background: C.pineDark, margin: 16, borderRadius: 26, padding: "22px 20px", overflow: "hidden" }}>
             <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 19, color: C.cream, margin: "0 0 4px", textAlign: "center" }}>
-              Marca cuál planta analizar
+              Tus fotos ({photoUrls.length}/3)
             </p>
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "rgba(245,239,221,0.7)", margin: "0 0 18px", textAlign: "center" }}>
-              Arrastra para mover y usa la barrita para acercar
+              Agregar más ángulos (hoja de cerca, planta completa, tallo) ayuda a identificarla mejor
             </p>
 
-            <div
-              onPointerDown={onCropPointerDown}
-              onPointerMove={onCropPointerMove}
-              onPointerUp={onCropPointerUp}
-              style={{
-                width: 280,
-                height: 280,
-                borderRadius: 20,
-                overflow: "hidden",
-                position: "relative",
-                background: "#000",
-                touchAction: "none",
-                cursor: "grab",
-              }}
-            >
-              <img
-                src={cropImgUrl}
-                alt=""
-                draggable={false}
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  minWidth: "100%",
-                  minHeight: "100%",
-                  transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  userSelect: "none",
-                  pointerEvents: "none",
-                }}
-              />
-              <div style={{ position: "absolute", inset: 0, border: "2px solid rgba(245,239,221,0.6)", borderRadius: 20, pointerEvents: "none" }} />
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", width: 280 }}>
+              {photoUrls.map((u, i) => (
+                <div key={i} style={{ position: "relative", width: 84, height: 84 }}>
+                  <img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 14 }} />
+                  <button
+                    onClick={() => removePhoto(i)}
+                    aria-label="Quitar foto"
+                    style={{ position: "absolute", top: -6, right: -6, background: C.cream, border: "none", borderRadius: "50%", width: 22, height: 22, color: C.rust, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >
+                    <Icon.X />
+                  </button>
+                  {i === 0 && (
+                    <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(34,28,19,0.6)", color: C.cream, fontSize: 9, padding: "2px 6px", borderRadius: 6, fontFamily: "'Inter', sans-serif" }}>
+                      principal
+                    </span>
+                  )}
+                </div>
+              ))}
+              {photoUrls.length < 3 && (
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  style={{
+                    width: 84,
+                    height: 84,
+                    borderRadius: 14,
+                    border: "1px dashed rgba(245,239,221,0.5)",
+                    background: "transparent",
+                    color: C.cream,
+                    fontSize: 26,
+                    cursor: "pointer",
+                  }}
+                  aria-label="Agregar otra foto"
+                >
+                  +
+                </button>
+              )}
             </div>
 
-            <div style={{ width: 280, display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
-              <span style={{ color: C.cream, fontSize: 12 }}>−</span>
-              <input
-                type="range"
-                min="1"
-                max="3"
-                step="0.05"
-                value={zoom}
-                onChange={(e) => setZoom(parseFloat(e.target.value))}
-                style={{ flex: 1 }}
-              />
-              <span style={{ color: C.cream, fontSize: 15 }}>+</span>
-            </div>
-
-            {darkWarning && (
-              <div style={{ width: 280, background: "#F3DCC9", borderRadius: 10, padding: "10px 12px", marginTop: 14 }}>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.rust, margin: 0, lineHeight: 1.4 }}>
-                  ⚠️ Esta foto se ve algo oscura, lo que puede afectar el análisis. Puedes intentar con más luz, o continuar de todas formas.
-                </p>
-              </div>
-            )}
-
-            <div style={{ width: 280, marginTop: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ width: 280, marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
               <button
-                onClick={confirmCrop}
+                onClick={confirmPhotos}
                 style={{ width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: C.cream, color: C.pine, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
               >
-                {darkWarning ? "Analizar de todas formas" : "Usar este recorte"}
-              </button>
-              <button
-                onClick={useFullPhoto}
-                style={{ width: "100%", padding: "11px 0", borderRadius: 12, border: "1px solid rgba(245,239,221,0.4)", background: "transparent", color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-              >
-                Usar foto completa
+                Analizar planta
               </button>
               <button
                 onClick={() => openCamera(captureMode, followupPlantId)}
                 style={{ background: "transparent", border: "none", color: "rgba(245,239,221,0.6)", fontSize: 12.5, cursor: "pointer", padding: "4px 0" }}
               >
-                ← Tomar otra foto
+                ← Empezar de nuevo
               </button>
             </div>
           </div>

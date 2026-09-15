@@ -1,33 +1,34 @@
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 
-// ---- Design tokens (estilo iOS: fondo claro, tarjetas blancas, acentos por categoría) ----
+// ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
-  bg: "#F2F1EC",          // lienzo de fondo, gris cálido tipo iOS
-  card: "#FFFFFF",         // superficie de tarjetas
-  cardLine: "#EBE9E3",     // separador sutil entre filas
-  ink: "#1C1C1E",          // texto principal (negro iOS)
-  inkSoft: "#6E6E73",      // texto secundario (gris iOS)
-  green: "#2E9E5B",        // saludable / acento de marca
-  greenDark: "#1F7A45",
-  blue: "#0A84FF",         // riego / agua
-  amber: "#FF9F0A",        // luz / atención
-  red: "#FF3B30",          // crítico / problemas
-  orange: "#FF9500",       // racha
-  dark: "#121417",         // pantalla de cámara (estilo Cámara de iOS)
-  wood: "#8B5A2E",         // se conserva solo para el logo/insignia si hace falta
+  bg: "#EAC468",           // lienzo de fondo dorado (el original)
+  card: "#F5EFDD",          // superficie de tarjetas — crema
+  cardLine: "#e2d7b8",      // separador sutil entre filas
+  ink: "#221C13",           // texto principal
+  inkSoft: "#6b6047",       // texto secundario
+  green: "#3F5D3E",         // verde pino — saludable / acento de marca
+  greenDark: "#28402A",
+  blue: "#3E7CA6",          // riego / agua (azul templado, no el azul frío de iOS)
+  amber: "#D6A23D",         // luz / atención
+  red: "#9C3B2E",           // crítico / problemas (el rust original)
+  orange: "#C2703C",        // racha
+  dark: "#28402A",          // pantalla de cámara — verde pino oscuro (el original)
+  wood: "#8B5A2E",
   woodDark: "#6E4522",
+  tileBg: "#EFE6CC",        // fondo de las tarjetitas de estadística dentro de la tarjeta crema
 
   // alias usados en partes que no se tocaron a fondo, para no romper nada
-  pine: "#2E9E5B",
-  pineDark: "#121417",
-  cream: "#FFFFFF",
-  creamLine: "#EBE9E3",
-  amberOld: "#FF9F0A",
-  rust: "#FF3B30",
-  coral: "#FF3B30",
-  mossText: "#6E6E73",
-  gold: "#F2F1EC",
+  pine: "#3F5D3E",
+  pineDark: "#28402A",
+  cream: "#F5EFDD",
+  creamLine: "#e2d7b8",
+  amberOld: "#D6A23D",
+  rust: "#9C3B2E",
+  coral: "#9C3B2E",
+  mossText: "#6b6047",
+  gold: "#EAC468",
 };
 
 const ESTADO_COLOR = {
@@ -46,7 +47,7 @@ const FONTS_IMPORT = `
   display: flex;
   flex-direction: column;
   margin: 0 auto;
-  background: #F2F1EC;
+  background: #EAC468;
 }
 .brotes-grid {
   display: grid;
@@ -272,7 +273,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
           <>
             {/* tarjetas de estadística: próximo riego + racha o estado */}
             <div className="brotes-stats" style={{ marginTop: 16 }}>
-              <div style={{ background: C.bg, borderRadius: 16, padding: "12px 14px" }}>
+              <div style={{ background: C.tileBg, borderRadius: 16, padding: "12px 14px" }}>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: "rgba(10,132,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
                   <Icon.Droplet style={{ color: C.blue }} />
                 </div>
@@ -282,7 +283,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, margin: "1px 0 0" }}>Próximo riego</p>
               </div>
 
-              <div style={{ background: C.bg, borderRadius: 16, padding: "12px 14px" }}>
+              <div style={{ background: C.tileBg, borderRadius: 16, padding: "12px 14px" }}>
                 <div
                   style={{
                     width: 26,
@@ -351,7 +352,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                   padding: "13px 0",
                   borderRadius: 14,
                   border: "none",
-                  background: saved ? C.bg : C.green,
+                  background: saved ? C.tileBg : C.green,
                   color: saved ? C.inkSoft : "#fff",
                   fontFamily: "'Inter', sans-serif",
                   fontWeight: 700,
@@ -382,7 +383,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
 function DetailRow({ icon, label, text }) {
   return (
     <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", borderTop: "1px solid " + C.cardLine }}>
-      <div style={{ width: 26, height: 26, borderRadius: 8, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <div style={{ width: 26, height: 26, borderRadius: 8, background: C.tileBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         {icon}
       </div>
       <div style={{ minWidth: 0 }}>
@@ -486,9 +487,9 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         margin: "0 16px 16px",
         padding: "10px 6px 8px",
         borderRadius: 22,
-        background: "rgba(255,255,255,0.92)",
+        background: "rgba(245,239,221,0.92)",
         borderTop: "1px solid " + C.cardLine,
-        boxShadow: "0 -1px 0 rgba(0,0,0,0.02), 0 12px 30px -10px rgba(0,0,0,0.12)",
+        boxShadow: "0 -1px 0 rgba(0,0,0,0.02), 0 12px 30px -10px rgba(40,64,42,0.18)",
         backdropFilter: "blur(20px)",
       }}
     >
@@ -505,11 +506,11 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           border: "none",
           padding: "4px 0",
           cursor: "pointer",
-          color: jardinActive ? C.green : "#B9B9BE",
+          color: jardinActive ? C.green : "#B5A683",
         }}
       >
         <Icon.Leaf style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5, color: jardinActive ? C.green : "#B9B9BE" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5, color: jardinActive ? C.green : "#B5A683" }}>
           Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
         </span>
       </button>
@@ -526,11 +527,11 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           border: "none",
           padding: "4px 0",
           cursor: "pointer",
-          color: cameraActive ? C.green : "#B9B9BE",
+          color: cameraActive ? C.green : "#B5A683",
         }}
       >
         <Icon.Camera style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5, color: cameraActive ? C.green : "#B9B9BE" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5, color: cameraActive ? C.green : "#B5A683" }}>
           Cámara
         </span>
       </button>
@@ -898,42 +899,42 @@ export default function BrotesApp() {
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
             <div style={{ padding: "18px 20px 4px" }}>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", margin: 0 }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(245,239,221,0.5)", margin: 0 }}>
                 {captureMode === "followup" ? "Seguimiento de planta" : "Nueva planta"}
               </p>
-              <h1 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 22, color: "#fff", margin: "3px 0 0", letterSpacing: "-0.01em" }}>
+              <h1 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 22, color: C.cream, margin: "3px 0 0", letterSpacing: "-0.01em" }}>
                 {captureMode === "followup" ? "¿Cómo va hoy?" : "Enfoca tu planta"}
               </h1>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(255,255,255,0.55)", margin: "8px 0 0", lineHeight: 1.4 }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(245,239,221,0.65)", margin: "8px 0 0", lineHeight: 1.4 }}>
                 💡 Con luz de día y una sola planta en el encuadre, el análisis sale más preciso.
               </p>
-              {error && <p style={{ color: C.red, fontSize: 12.5, marginTop: 8, fontFamily: "'Inter', sans-serif" }}>{error}</p>}
+              {error && <p style={{ color: "#e3a08c", fontSize: 12.5, marginTop: 8, fontFamily: "'Inter', sans-serif" }}>{error}</p>}
             </div>
             <div
               style={{
                 flex: 1,
                 margin: "14px 20px",
                 borderRadius: 18,
-                border: "1px dashed rgba(255,255,255,0.18)",
+                border: "1px dashed rgba(245,239,221,0.25)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 minHeight: 260,
-                background: "radial-gradient(circle at 50% 30%, #23262B 0%, #121417 75%)",
+                background: "radial-gradient(circle at 50% 30%, #345a37 0%, #1f3521 75%)",
               }}
             >
               <svg width="46" height="46" viewBox="0 0 24 24" fill="none">
-                <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke="#fff" strokeWidth="1.4" opacity="0.5" />
-                <circle cx="12" cy="13" r="3.4" stroke="#fff" strokeWidth="1.4" opacity="0.5" />
+                <path d="M4 8a2 2 0 012-2h2l1.5-2h5L16 6h2a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z" stroke={C.cream} strokeWidth="1.4" opacity="0.7" />
+                <circle cx="12" cy="13" r="3.4" stroke={C.cream} strokeWidth="1.4" opacity="0.7" />
               </svg>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "10px 30px 26px" }}>
-              <button onClick={() => galleryRef.current?.click()} style={{ background: "none", border: "none", color: "#fff", cursor: "pointer" }}>
+              <button onClick={() => galleryRef.current?.click()} style={{ background: "none", border: "none", color: C.cream, cursor: "pointer" }}>
                 <Icon.Gallery />
               </button>
               <button
                 onClick={() => fileRef.current?.click()}
-                style={{ width: 66, height: 66, borderRadius: "50%", border: "4px solid #fff", background: "transparent", cursor: "pointer" }}
+                style={{ width: 66, height: 66, borderRadius: "50%", border: "4px solid " + C.cream, background: "transparent", cursor: "pointer" }}
                 aria-label="Tomar foto"
               />
               <div style={{ width: 22 }} />
@@ -946,10 +947,10 @@ export default function BrotesApp() {
         {/* ---------------- FOTOS (revisión antes de analizar) ---------------- */}
         {screen === "fotos" && photoUrls.length > 0 && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", background: C.dark, margin: 16, borderRadius: 26, padding: "22px 20px", overflow: "hidden" }}>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: "#fff", margin: "0 0 4px", textAlign: "center", letterSpacing: "-0.01em" }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: C.cream, margin: "0 0 4px", textAlign: "center", letterSpacing: "-0.01em" }}>
               Tus fotos ({photoUrls.length}/3)
             </p>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(255,255,255,0.55)", margin: "0 0 18px", textAlign: "center" }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(245,239,221,0.65)", margin: "0 0 18px", textAlign: "center" }}>
               Agregar más ángulos (hoja de cerca, planta completa, tallo) ayuda a identificarla mejor
             </p>
 
@@ -960,12 +961,12 @@ export default function BrotesApp() {
                   <button
                     onClick={() => removePhoto(i)}
                     aria-label="Quitar foto"
-                    style={{ position: "absolute", top: -6, right: -6, background: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    style={{ position: "absolute", top: -6, right: -6, background: C.cream, border: "none", borderRadius: "50%", width: 22, height: 22, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
                     <Icon.X />
                   </button>
                   {i === 0 && (
-                    <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 9, padding: "2px 6px", borderRadius: 6, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
+                    <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(34,28,19,0.6)", color: C.cream, fontSize: 9, padding: "2px 6px", borderRadius: 6, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
                       principal
                     </span>
                   )}
@@ -978,9 +979,9 @@ export default function BrotesApp() {
                     width: 84,
                     height: 84,
                     borderRadius: 14,
-                    border: "1px dashed rgba(255,255,255,0.3)",
+                    border: "1px dashed rgba(245,239,221,0.4)",
                     background: "transparent",
-                    color: "#fff",
+                    color: C.cream,
                     fontSize: 26,
                     cursor: "pointer",
                   }}
@@ -994,13 +995,13 @@ export default function BrotesApp() {
             <div style={{ width: 280, marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
               <button
                 onClick={confirmPhotos}
-                style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: C.green, color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+                style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: C.cream, color: C.pine, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
               >
                 Analizar planta
               </button>
               <button
                 onClick={() => openCamera(captureMode, followupPlantId)}
-                style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 12.5, cursor: "pointer", padding: "4px 0", fontFamily: "'Inter', sans-serif" }}
+                style={{ background: "transparent", border: "none", color: "rgba(245,239,221,0.6)", fontSize: 12.5, cursor: "pointer", padding: "4px 0", fontFamily: "'Inter', sans-serif" }}
               >
                 ← Empezar de nuevo
               </button>
@@ -1014,10 +1015,10 @@ export default function BrotesApp() {
             {imageUrl && <img src={imageUrl} alt="planta" style={{ width: 140, height: 140, objectFit: "cover", borderRadius: 14, opacity: 0.9 }} />}
             <div style={{ display: "flex", gap: 6 }}>
               {[0, 1, 2].map((i) => (
-                <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", animation: `pulse 1.1s ${i * 0.15}s infinite ease-in-out` }} />
+                <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: C.cream, animation: `pulse 1.1s ${i * 0.15}s infinite ease-in-out` }} />
               ))}
             </div>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "rgba(255,255,255,0.6)", letterSpacing: "0.02em" }}>Observando tu planta...</p>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "rgba(245,239,221,0.7)", letterSpacing: "0.02em" }}>Observando tu planta...</p>
             <style>{`@keyframes pulse { 0%,80%,100%{transform:scale(0.6); opacity:.4} 40%{transform:scale(1); opacity:1} }`}</style>
           </div>
         )}
@@ -1053,7 +1054,7 @@ export default function BrotesApp() {
                       <button
                         onClick={() => saveAnalysis(result, imageUrl, capturedFile)}
                         style={{
-                          background: C.bg,
+                          background: C.tileBg,
                           border: "none",
                           borderRadius: 10,
                           padding: "8px 16px",
@@ -1114,7 +1115,7 @@ export default function BrotesApp() {
                       width: 34,
                       height: 34,
                       borderRadius: "50%",
-                      background: C.bg,
+                      background: C.tileBg,
                       border: "none",
                       display: "flex",
                       alignItems: "center",
@@ -1311,7 +1312,7 @@ export default function BrotesApp() {
                 const antes = activePlant.history[a];
                 const despues = activePlant.history[b];
                 return (
-                  <div style={{ display: "flex", gap: 12, marginTop: 12, background: C.bg, borderRadius: 16, padding: 14 }}>
+                  <div style={{ display: "flex", gap: 12, marginTop: 12, background: C.tileBg, borderRadius: 16, padding: 14 }}>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <img src={antes.imageUrl} alt="Antes" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 10 }} />
                       <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11.5, color: C.ink, margin: "6px 0 0" }}>Antes</p>
@@ -1371,7 +1372,7 @@ export default function BrotesApp() {
                   </p>
                   <button
                     onClick={() => setSugerenciaEnviada(false)}
-                    style={{ marginTop: 16, background: C.bg, border: "none", borderRadius: 12, padding: "9px 18px", color: C.ink, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+                    style={{ marginTop: 16, background: C.tileBg, border: "none", borderRadius: 12, padding: "9px 18px", color: C.ink, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer" }}
                   >
                     Enviar otro mensaje
                   </button>
@@ -1393,7 +1394,7 @@ export default function BrotesApp() {
                       color: C.ink,
                       resize: "none",
                       boxSizing: "border-box",
-                      background: C.bg,
+                      background: C.tileBg,
                     }}
                   />
                   {sugerenciaError && (

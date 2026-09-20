@@ -111,9 +111,31 @@ function getWateringStatus(plant) {
   const daysSince = Math.floor((Date.now() - lastDate.getTime()) / msPerDay);
   const remaining = plant.dias_entre_riegos - daysSince;
 
-  if (remaining <= 0) return { label: daysSince === plant.dias_entre_riegos ? "Riega hoy" : "Necesita agua", urgent: true };
-  if (remaining === 1) return { label: "Riega mañana", urgent: false };
-  return { label: `Riega en ${remaining} días`, urgent: false };
+  if (remaining <= 0) return { label: daysSince === plant.dias_entre_riegos ? "Riega hoy" : "Necesita agua", urgent: true, remaining };
+  if (remaining === 1) return { label: "Riega mañana", urgent: false, remaining };
+  return { label: `Riega en ${remaining} días`, urgent: false, remaining };
+}
+
+// Orden de prioridad para ordenar por estado de salud: lo que necesita atención primero
+const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
+
+function ordenarJardin(plantas, criterio) {
+  const copia = [...plantas];
+  if (criterio === "nombre") {
+    return copia.sort((a, b) => (a.nombre_comun || "").localeCompare(b.nombre_comun || "", "es"));
+  }
+  if (criterio === "riego") {
+    return copia.sort((a, b) => {
+      const ra = getWateringStatus(a)?.remaining ?? 999;
+      const rb = getWateringStatus(b)?.remaining ?? 999;
+      return ra - rb;
+    });
+  }
+  if (criterio === "salud") {
+    return copia.sort((a, b) => (ESTADO_ORDEN[a.estado_general] ?? 3) - (ESTADO_ORDEN[b.estado_general] ?? 3));
+  }
+  // "recientes": más nuevas primero (el orden guardado ya viene de más vieja a más nueva)
+  return copia.reverse();
 }
 
 const ESTADO_STYLES = {
@@ -545,6 +567,7 @@ export default function BrotesApp() {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [compareMode, setCompareMode] = useState(false);
+  const [ordenJardin, setOrdenJardin] = useState("recientes");
   const [compareIndices, setCompareIndices] = useState([]);
 
   async function saveNameEdit(plantId) {
@@ -895,6 +918,8 @@ export default function BrotesApp() {
     <div style={{ minHeight: "100vh", background: C.gold, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
       <div className="brotes-shell">
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+        <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -939,8 +964,6 @@ export default function BrotesApp() {
               />
               <div style={{ width: 22 }} />
             </div>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
-            <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
           </div>
         )}
 
@@ -1198,8 +1221,37 @@ export default function BrotesApp() {
                       </div>
                     );
                   })()}
+
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }}>
+                    {[
+                      { key: "recientes", label: "Recientes" },
+                      { key: "nombre", label: "Nombre" },
+                      { key: "riego", label: "Riego" },
+                      { key: "salud", label: "Estado" },
+                    ].map((op) => (
+                      <button
+                        key={op.key}
+                        onClick={() => setOrdenJardin(op.key)}
+                        style={{
+                          flexShrink: 0,
+                          padding: "6px 14px",
+                          borderRadius: 20,
+                          border: "none",
+                          background: ordenJardin === op.key ? C.green : C.tileBg,
+                          color: ordenJardin === op.key ? "#fff" : C.inkSoft,
+                          fontFamily: "'Inter', sans-serif",
+                          fontWeight: 600,
+                          fontSize: 12.5,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {op.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="brotes-grid">
-                  {garden.map((p) => (
+                  {ordenarJardin(garden, ordenJardin).map((p) => (
                     <div key={p.id} onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
                       <button
                         onClick={async (e) => {

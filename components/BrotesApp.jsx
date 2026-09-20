@@ -48,6 +48,7 @@ const FONTS_IMPORT = `
   flex-direction: column;
   margin: 0 auto;
   background: #EAC468;
+  position: relative;
 }
 .brotes-grid {
   display: grid;
@@ -118,6 +119,16 @@ function getWateringStatus(plant) {
 
 // Orden de prioridad para ordenar por estado de salud: lo que necesita atención primero
 const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
+
+// Tips generales de cuidado, para los circulitos tipo "Stories" del jardín
+const TIPS = [
+  { id: "riego", emoji: "💧", corto: "Riego", titulo: "El error más común: regar de más", texto: "Más plantas mueren por exceso de riego que por falta de agua. Antes de regar, mete un dedo 2-3 cm en la tierra — si se siente húmeda, espera un día más." },
+  { id: "luz", emoji: "☀️", corto: "Luz", titulo: "No toda la 'luz' es igual", texto: "Luz indirecta brillante significa cerca de una ventana pero sin que el sol pegue directo en las hojas. El sol directo de mediodía puede quemarlas." },
+  { id: "hojas", emoji: "🍂", corto: "Hojas", titulo: "Hojas amarillas no siempre es lo mismo", texto: "Una hoja amarilla vieja que se cae sola es normal. Varias hojas amarillas a la vez casi siempre es señal de exceso de riego." },
+  { id: "plagas", emoji: "🔍", corto: "Plagas", titulo: "Revisa el envés de las hojas", texto: "Los ácaros y cochinillas casi siempre aparecen primero por debajo de las hojas. Revisa ahí cada par de semanas, antes de que se noten por arriba." },
+  { id: "trasplante", emoji: "🪴", corto: "Maceta", titulo: "¿Cuándo cambiar de maceta?", texto: "Si ves raíces saliendo por el hoyo de abajo, o el agua ya no se absorbe y se queda encharcada arriba, es momento de una maceta más grande." },
+  { id: "humedad", emoji: "🌫️", corto: "Humedad", titulo: "Ambientes secos afectan más de lo que crees", texto: "El aire acondicionado y la calefacción bajan mucho la humedad. Agrupar varias plantas juntas ayuda a que se den un poco de humedad entre ellas." },
+];
 
 function ordenarJardin(plantas, criterio) {
   const copia = [...plantas];
@@ -568,6 +579,23 @@ export default function BrotesApp() {
   const [nameDraft, setNameDraft] = useState("");
   const [compareMode, setCompareMode] = useState(false);
   const [ordenJardin, setOrdenJardin] = useState("recientes");
+  const [activeTip, setActiveTip] = useState(null); // índice del tip abierto, o null
+  const [viewedTips, setViewedTips] = useState([]);
+
+  function openTip(i) {
+    setActiveTip(i);
+    const id = TIPS[i].id;
+    setViewedTips((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
+  function nextTip() {
+    if (activeTip === null) return;
+    if (activeTip < TIPS.length - 1) openTip(activeTip + 1);
+    else setActiveTip(null);
+  }
+  function prevTip() {
+    if (activeTip === null) return;
+    if (activeTip > 0) openTip(activeTip - 1);
+  }
   const [compareIndices, setCompareIndices] = useState([]);
 
   async function saveNameEdit(plantId) {
@@ -1128,56 +1156,90 @@ export default function BrotesApp() {
         {screen === "jardin" && !activePlant && (
           <>
             <div style={{ padding: "20px 20px 14px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <img src="/logo.png" alt="Ámbitat" style={{ height: 26, width: "auto" }} />
-                {notifStatus === "default" && (
-                  <button
-                    onClick={enableNotifications}
-                    aria-label="Activar recordatorios"
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: "50%",
-                      background: C.tileBg,
-                      border: "none",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                      color: C.ink,
-                      fontSize: 15,
-                    }}
-                  >
-                    🔔
-                  </button>
-                )}
-                {notifStatus === "subscribed" && (
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: C.green }}>🔔 Activo</span>
-                )}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <h1
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontWeight: 800,
+                    fontSize: 30,
+                    letterSpacing: "-0.02em",
+                    color: C.ink,
+                    margin: 0,
+                  }}
+                >
+                  Mi jardín
+                </h1>
+                <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto", flexShrink: 0 }} />
               </div>
-              <h1
-                style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 800,
-                  fontSize: 32,
-                  letterSpacing: "-0.02em",
-                  color: C.ink,
-                  margin: "14px 0 2px",
-                }}
-              >
-                Mi jardín
-              </h1>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft, margin: 0 }}>
                   Cuida tus plantas, una foto a la vez.
                 </p>
-                <button
-                  onClick={() => setScreen("sugerencias")}
-                  style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 4, opacity: 0.7 }}
-                  aria-label="Enviar sugerencia"
-                >
-                  <Icon.Info style={{ width: 18, height: 18 }} />
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  {notifStatus === "default" && (
+                    <button
+                      onClick={enableNotifications}
+                      aria-label="Activar recordatorios"
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: "50%",
+                        background: C.tileBg,
+                        border: "none",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        color: C.ink,
+                        fontSize: 13,
+                      }}
+                    >
+                      🔔
+                    </button>
+                  )}
+                  {notifStatus === "subscribed" && (
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: C.green }}>🔔</span>
+                  )}
+                  <button
+                    onClick={() => setScreen("sugerencias")}
+                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 4, opacity: 0.7 }}
+                    aria-label="Enviar sugerencia"
+                  >
+                    <Icon.Info style={{ width: 18, height: 18 }} />
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", marginTop: 16, paddingBottom: 2 }}>
+                {TIPS.map((tip, i) => {
+                  const visto = viewedTips.includes(tip.id);
+                  return (
+                    <button
+                      key={tip.id}
+                      onClick={() => openTip(i)}
+                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flexShrink: 0, width: 62 }}
+                    >
+                      <div
+                        style={{
+                          width: 58,
+                          height: 58,
+                          borderRadius: "50%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 24,
+                          background: C.card,
+                          border: "2.5px solid " + (visto ? C.cardLine : C.green),
+                        }}
+                      >
+                        {tip.emoji}
+                      </div>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
+                        {tip.corto}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 20px" }}>
@@ -1473,6 +1535,49 @@ export default function BrotesApp() {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTip !== null && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(20,16,8,0.92)",
+              zIndex: 50,
+              display: "flex",
+              flexDirection: "column",
+              padding: "16px 18px",
+            }}
+          >
+            <div style={{ display: "flex", gap: 5, marginBottom: 16 }}>
+              {TIPS.map((_, i) => (
+                <div key={i} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= activeTip ? "#fff" : "rgba(255,255,255,0.3)" }} />
+              ))}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "auto" }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Tip de cuidado
+              </span>
+              <button onClick={() => setActiveTip(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 4 }}>
+                <Icon.X style={{ width: 20, height: 20 }} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "0 10px" }}>
+              <p style={{ fontSize: 52, margin: "0 0 18px" }}>{TIPS[activeTip].emoji}</p>
+              <h2 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 21, color: "#fff", margin: "0 0 12px", letterSpacing: "-0.01em" }}>
+                {TIPS[activeTip].titulo}
+              </h2>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14.5, color: "rgba(255,255,255,0.8)", lineHeight: 1.55, margin: 0 }}>
+                {TIPS[activeTip].texto}
+              </p>
+            </div>
+
+            <div style={{ display: "flex", position: "absolute", inset: 0, top: 74 }}>
+              <div onClick={prevTip} style={{ flex: 1, cursor: "pointer" }} />
+              <div onClick={nextTip} style={{ flex: 1, cursor: "pointer" }} />
             </div>
           </div>
         )}

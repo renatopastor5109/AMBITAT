@@ -1210,6 +1210,65 @@ export default function BrotesApp() {
                 </div>
               </div>
 
+              {garden.length > 0 && (() => {
+                const total = garden.length;
+                const saludables = garden.filter((p) => p.estado_general === "saludable").length;
+                const pctSaludable = Math.round((saludables / total) * 100);
+                const necesitanAgua = garden.filter((p) => getWateringStatus(p)?.urgent).length;
+                const stats = [
+                  {
+                    key: "salud",
+                    valor: `${pctSaludable}%`,
+                    label: "Saludables",
+                    color: pctSaludable >= 80 ? C.green : pctSaludable >= 50 ? C.amber : C.red,
+                    onClick: () => setOrdenJardin("salud"),
+                  },
+                  {
+                    key: "total",
+                    valor: String(total),
+                    label: total === 1 ? "Planta" : "Plantas",
+                    color: C.green,
+                    onClick: () => setOrdenJardin("recientes"),
+                  },
+                  {
+                    key: "riego",
+                    valor: String(necesitanAgua),
+                    label: necesitanAgua === 1 ? "Necesita agua" : "Necesitan agua",
+                    color: necesitanAgua > 0 ? C.red : C.green,
+                    onClick: () => setOrdenJardin("riego"),
+                  },
+                ];
+                return (
+                  <div style={{ display: "flex", gap: 14, marginTop: 16 }}>
+                    {stats.map((s) => (
+                      <button
+                        key={s.key}
+                        onClick={s.onClick}
+                        style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flex: 1 }}
+                      >
+                        <div
+                          style={{
+                            width: 58,
+                            height: 58,
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: C.card,
+                            border: "2.5px solid " + s.color,
+                          }}
+                        >
+                          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, color: s.color }}>{s.valor}</span>
+                        </div>
+                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
+                          {s.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+
               <div style={{ display: "flex", gap: 14, overflowX: "auto", marginTop: 16, paddingBottom: 2 }}>
                 {TIPS.map((tip, i) => {
                   const visto = viewedTips.includes(tip.id);

@@ -1210,88 +1210,104 @@ export default function BrotesApp() {
                 </div>
               </div>
 
-              {garden.length > 0 && (() => {
-                const total = garden.length;
-                const saludables = garden.filter((p) => p.estado_general === "saludable").length;
-                const pctSaludable = Math.round((saludables / total) * 100);
-                const necesitanAgua = garden.filter((p) => getWateringStatus(p)?.urgent).length;
-                const stats = [
-                  {
-                    key: "salud",
-                    valor: `${pctSaludable}%`,
-                    label: "Saludables",
-                    color: pctSaludable >= 80 ? C.green : pctSaludable >= 50 ? C.amber : C.red,
-                    onClick: () => setOrdenJardin("salud"),
-                  },
-                  {
-                    key: "total",
-                    valor: String(total),
-                    label: total === 1 ? "Planta" : "Plantas",
-                    color: C.green,
-                    onClick: () => setOrdenJardin("recientes"),
-                  },
-                  {
-                    key: "riego",
-                    valor: String(necesitanAgua),
-                    label: necesitanAgua === 1 ? "Necesita agua" : "Necesitan agua",
-                    color: necesitanAgua > 0 ? C.red : C.green,
-                    onClick: () => setOrdenJardin("riego"),
-                  },
-                ];
-                return (
-                  <div style={{ display: "flex", gap: 14, marginTop: 16 }}>
-                    {stats.map((s) => (
-                      <button
-                        key={s.key}
-                        onClick={s.onClick}
-                        style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flex: 1 }}
+              <div style={{ display: "flex", gap: 16, overflowX: "auto", marginTop: 16, padding: "4px 2px 8px" }}>
+                {garden.length > 0 && (() => {
+                  const total = garden.length;
+                  const saludables = garden.filter((p) => p.estado_general === "saludable").length;
+                  const pctSaludable = Math.round((saludables / total) * 100);
+                  const necesitanAgua = garden.filter((p) => getWateringStatus(p)?.urgent).length;
+                  const stats = [
+                    {
+                      key: "salud",
+                      valor: `${pctSaludable}%`,
+                      label: "Saludables",
+                      color: pctSaludable >= 80 ? C.green : pctSaludable >= 50 ? C.amber : C.red,
+                      onClick: () => setOrdenJardin("salud"),
+                    },
+                    {
+                      key: "total",
+                      valor: String(total),
+                      label: total === 1 ? "Planta" : "Plantas",
+                      color: C.green,
+                      onClick: () => setOrdenJardin("recientes"),
+                    },
+                    {
+                      key: "riego",
+                      valor: String(necesitanAgua),
+                      label: necesitanAgua === 1 ? "Necesita agua" : "Necesitan agua",
+                      color: necesitanAgua > 0 ? C.red : C.green,
+                      onClick: () => setOrdenJardin("riego"),
+                    },
+                  ];
+                  return stats.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={s.onClick}
+                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0, width: 64 }}
+                    >
+                      <div
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: "50%",
+                          padding: 3,
+                          background: `linear-gradient(135deg, ${s.color}, ${s.color}66)`,
+                          boxShadow: "0 6px 14px -5px rgba(40,64,42,0.35)",
+                        }}
                       >
                         <div
                           style={{
-                            width: 58,
-                            height: 58,
+                            width: "100%",
+                            height: "100%",
                             borderRadius: "50%",
+                            background: C.card,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            background: C.card,
-                            border: "2.5px solid " + s.color,
                           }}
                         >
-                          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, color: s.color }}>{s.valor}</span>
+                          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: s.color }}>{s.valor}</span>
                         </div>
-                        <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
-                          {s.label}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
+                      </div>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
+                        {s.label}
+                      </span>
+                    </button>
+                  ));
+                })()}
 
-              <div style={{ display: "flex", gap: 14, overflowX: "auto", marginTop: 16, paddingBottom: 2 }}>
                 {TIPS.map((tip, i) => {
                   const visto = viewedTips.includes(tip.id);
                   return (
                     <button
                       key={tip.id}
                       onClick={() => openTip(i)}
-                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flexShrink: 0, width: 62 }}
+                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0, width: 64 }}
                     >
                       <div
                         style={{
-                          width: 58,
-                          height: 58,
+                          width: 64,
+                          height: 64,
                           borderRadius: "50%",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 24,
-                          background: C.card,
-                          border: "2.5px solid " + (visto ? C.cardLine : C.green),
+                          padding: 3,
+                          background: visto ? C.cardLine : `linear-gradient(135deg, ${C.green}, ${C.amber})`,
+                          boxShadow: visto ? "none" : "0 6px 14px -5px rgba(40,64,42,0.35)",
                         }}
                       >
-                        {tip.emoji}
+                        <div
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            borderRadius: "50%",
+                            background: C.card,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 26,
+                          }}
+                        >
+                          {tip.emoji}
+                        </div>
                       </div>
                       <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
                         {tip.corto}

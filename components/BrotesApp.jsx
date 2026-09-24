@@ -643,6 +643,7 @@ export default function BrotesApp() {
 
   // capture flow state
   const [captureMode, setCaptureMode] = useState("new"); // 'new' | 'followup'
+  const [plantHint, setPlantHint] = useState(""); // nombre que el usuario cree que es, opcional
   const [followupPlantId, setFollowupPlantId] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
   const [result, setResult] = useState(null);
@@ -803,6 +804,7 @@ export default function BrotesApp() {
     setSaveError(null);
     setPhotoFiles([]);
     setPhotoUrls([]);
+    setPlantHint("");
     setScreen("camera");
   }
 
@@ -839,7 +841,7 @@ export default function BrotesApp() {
       const response = await fetch("/api/analizar-planta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images }),
+        body: JSON.stringify({ images, nombreSugerido: plantHint }),
       });
       if (!response.ok) throw new Error("Error del servidor");
       const parsed = await response.json();
@@ -970,6 +972,29 @@ export default function BrotesApp() {
               <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(245,239,221,0.65)", margin: "8px 0 0", lineHeight: 1.4 }}>
                 💡 Con luz de día y una sola planta en el encuadre, el análisis sale más preciso.
               </p>
+              {captureMode !== "followup" && (
+                <div style={{ marginTop: 12 }}>
+                  <input
+                    value={plantHint}
+                    onChange={(e) => setPlantHint(e.target.value)}
+                    placeholder="¿Ya sabes qué planta es? (opcional)"
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      background: "rgba(245,239,221,0.1)",
+                      border: "1px solid rgba(245,239,221,0.25)",
+                      borderRadius: 12,
+                      padding: "11px 14px",
+                      color: C.cream,
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                    }}
+                  />
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "rgba(245,239,221,0.5)", margin: "6px 0 0", lineHeight: 1.35 }}>
+                    Si tienes una idea, escríbela — le sirve de referencia a la IA. Si no estás seguro, déjalo en blanco.
+                  </p>
+                </div>
+              )}
               {error && <p style={{ color: "#e3a08c", fontSize: 12.5, marginTop: 8, fontFamily: "'Inter', sans-serif" }}>{error}</p>}
             </div>
             <div
@@ -1219,111 +1244,147 @@ export default function BrotesApp() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 16, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px" }}>
+              <div style={{ display: "flex", gap: 12, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px", alignItems: "stretch" }}>
                 {garden.length > 0 && (() => {
                   const total = garden.length;
                   const saludables = garden.filter((p) => p.estado_general === "saludable").length;
                   const pctSaludable = Math.round((saludables / total) * 100);
                   const necesitanAgua = garden.filter((p) => getWateringStatus(p)?.urgent).length;
-                  const stats = [
-                    {
-                      key: "salud",
-                      valor: `${pctSaludable}%`,
-                      label: "Saludables",
-                      color: pctSaludable >= 80 ? C.green : pctSaludable >= 50 ? C.amber : C.red,
-                      onClick: () => setOrdenJardin("salud"),
-                    },
-                    {
-                      key: "total",
-                      valor: String(total),
-                      label: total === 1 ? "Planta" : "Plantas",
-                      color: C.green,
-                      onClick: () => setOrdenJardin("recientes"),
-                    },
-                    {
-                      key: "riego",
-                      valor: String(necesitanAgua),
-                      label: necesitanAgua === 1 ? "Necesita agua" : "Necesitan agua",
-                      color: necesitanAgua > 0 ? C.red : C.green,
-                      onClick: () => setOrdenJardin("riego"),
-                    },
-                  ];
-                  return stats.map((s) => (
-                    <button
-                      key={s.key}
-                      onClick={s.onClick}
-                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0, width: 64 }}
+                  const pctRegada = Math.round(((total - necesitanAgua) / total) * 100);
+                  const ringColor = pctSaludable >= 80 ? C.green : pctSaludable >= 50 ? C.amber : C.red;
+                  const subtitulo =
+                    necesitanAgua === 0
+                      ? "todo está en orden 🌿"
+                      : necesitanAgua === 1
+                      ? "una planta necesita agua"
+                      : `${necesitanAgua} plantas necesitan agua`;
+                  const R = 30;
+                  const CIRC = 2 * Math.PI * R;
+
+                  return (
+                    <div
+                      onClick={() => setOrdenJardin("salud")}
+                      style={{
+                        flexShrink: 0,
+                        width: 220,
+                        background: C.card,
+                        borderRadius: 22,
+                        padding: "18px 18px",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 28px -14px rgba(0,0,0,0.18)",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
                     >
-                      <div
-                        style={{
-                          width: 64,
-                          height: 64,
-                          borderRadius: "50%",
-                          padding: 3,
-                          background: `linear-gradient(135deg, ${s.color}, ${s.color}66)`,
-                          boxShadow: "0 6px 14px -5px rgba(40,64,42,0.35)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            borderRadius: "50%",
-                            background: C.card,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: s.color }}>{s.valor}</span>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
+                        Tu jardín
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "2px 0 14px", lineHeight: 1.3 }}>
+                        {subtitulo}
+                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 30, color: C.ink, margin: 0, letterSpacing: "-0.02em", lineHeight: 1 }}>
+                            {total}
+                          </p>
+                          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: "1px 0 10px" }}>
+                            {total === 1 ? "planta" : "plantas"}
+                          </p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+                            <Icon.Leaf style={{ color: C.green, width: 13, height: 13, flexShrink: 0 }} />
+                            <div style={{ flex: 1, height: 6, borderRadius: 3, background: C.amber, overflow: "hidden" }}>
+                              <div style={{ width: `${pctSaludable}%`, height: "100%", background: C.green, borderRadius: 3 }} />
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <Icon.Droplet style={{ color: C.blue, width: 12, height: 12, flexShrink: 0 }} />
+                            <div style={{ flex: 1, height: 6, borderRadius: 3, background: C.red, overflow: "hidden" }}>
+                              <div style={{ width: `${pctRegada}%`, height: "100%", background: C.blue, borderRadius: 3 }} />
+                            </div>
+                          </div>
                         </div>
+                        <svg width="76" height="76" viewBox="0 0 76 76" style={{ flexShrink: 0, transform: "rotate(-90deg)" }}>
+                          <circle cx="38" cy="38" r={R} fill="none" stroke={C.cardLine} strokeWidth="7" />
+                          <circle
+                            cx="38"
+                            cy="38"
+                            r={R}
+                            fill="none"
+                            stroke={ringColor}
+                            strokeWidth="7"
+                            strokeLinecap="round"
+                            strokeDasharray={CIRC}
+                            strokeDashoffset={CIRC * (1 - pctSaludable / 100)}
+                          />
+                          <text
+                            x="38"
+                            y="38"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            transform="rotate(90 38 38)"
+                            style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17 }}
+                            fill={C.ink}
+                          >
+                            {pctSaludable}%
+                          </text>
+                        </svg>
                       </div>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
-                        {s.label}
-                      </span>
-                    </button>
-                  ));
+                    </div>
+                  );
                 })()}
 
-                {TIPS.map((tip, i) => {
-                  const visto = viewedTips.includes(tip.id);
+                {(() => {
+                  const pendientes = TIPS.filter((t) => !viewedTips.includes(t.id)).length;
+                  const primerPendiente = TIPS.findIndex((t) => !viewedTips.includes(t.id));
                   return (
                     <button
-                      key={tip.id}
-                      onClick={() => openTip(i)}
-                      style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flexShrink: 0, width: 64 }}
+                      onClick={() => openTip(primerPendiente >= 0 ? primerPendiente : 0)}
+                      style={{
+                        flexShrink: 0,
+                        width: 108,
+                        position: "relative",
+                        background: C.card,
+                        border: "3px solid " + (pendientes > 0 ? C.wood : C.cardLine),
+                        borderRadius: 20,
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        padding: "10px 8px",
+                      }}
                     >
-                      <div
-                        style={{
-                          width: 64,
-                          height: 64,
-                          borderRadius: "50%",
-                          padding: 3,
-                          background: visto ? C.cardLine : `linear-gradient(135deg, ${C.green}, ${C.amber})`,
-                          boxShadow: visto ? "none" : "0 6px 14px -5px rgba(40,64,42,0.35)",
-                        }}
-                      >
-                        <div
+                      {pendientes > 0 && (
+                        <span
                           style={{
-                            width: "100%",
-                            height: "100%",
+                            position: "absolute",
+                            top: -8,
+                            right: -8,
+                            background: C.red,
+                            color: "#fff",
                             borderRadius: "50%",
-                            background: C.card,
+                            minWidth: 20,
+                            height: 20,
+                            padding: "0 4px",
+                            fontFamily: "'Inter', sans-serif",
+                            fontWeight: 700,
+                            fontSize: 11,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            fontSize: 26,
                           }}
                         >
-                          {tip.emoji}
-                        </div>
-                      </div>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
-                        {tip.corto}
+                          {pendientes}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 30 }}>🌱</span>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.15 }}>
+                        Tips de cuidado
                       </span>
                     </button>
                   );
-                })}
+                })()}
               </div>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 20px" }}>

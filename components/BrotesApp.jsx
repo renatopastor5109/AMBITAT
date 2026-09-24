@@ -161,7 +161,7 @@ function Tag({ children, color }) {
       style={{
         fontFamily: "'Inter', sans-serif",
         fontWeight: 700,
-        fontSize: 11,
+        fontSize: 12,
         letterSpacing: "0.03em",
         textTransform: "uppercase",
         color: color || C.inkSoft,
@@ -243,14 +243,14 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                 <button
                   onClick={nameEdit.onSave}
                   aria-label="Guardar nombre"
-                  style={{ background: C.green, border: "none", borderRadius: 8, width: 28, height: 28, color: "#fff", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                  style={{ background: C.green, border: "none", borderRadius: 10, width: 36, height: 36, color: "#fff", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
-                  <Icon.Check style={{ width: 15, height: 15 }} />
+                  <Icon.Check style={{ width: 16, height: 16 }} />
                 </button>
                 <button
                   onClick={nameEdit.onCancel}
                   aria-label="Cancelar"
-                  style={{ background: "transparent", border: "1px solid " + C.cardLine, borderRadius: 8, width: 28, height: 28, color: C.inkSoft, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                  style={{ background: "transparent", border: "1px solid " + C.cardLine, borderRadius: 10, width: 36, height: 36, color: C.inkSoft, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
                   <Icon.X />
                 </button>
@@ -274,9 +274,9 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                   <button
                     onClick={nameEdit.onStart}
                     aria-label="Editar nombre"
-                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 2, flexShrink: 0 }}
+                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -7, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
-                    <Icon.Pencil style={{ width: 13, height: 13 }} />
+                    <Icon.Pencil style={{ width: 14, height: 14 }} />
                   </button>
                 )}
               </div>
@@ -305,7 +305,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
         {!compact && (
           <>
             {/* tarjetas de estadística: próximo riego + racha o estado */}
-            <div className="brotes-stats" style={{ marginTop: 16 }}>
+            <div className="brotes-stats" style={{ marginTop: 20 }}>
               <div style={{ background: C.tileBg, borderRadius: 16, padding: "12px 14px" }}>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: "rgba(10,132,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
                   <Icon.Droplet style={{ color: C.blue }} />
@@ -313,10 +313,18 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                 <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
                   {watering ? watering.label.replace(/^Riega\s*/i, "").replace(/^Necesita agua$/i, "Hoy") : "—"}
                 </p>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, margin: "1px 0 0" }}>Próximo riego</p>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "1px 0 0" }}>Próximo riego</p>
               </div>
 
-              <div style={{ background: C.tileBg, borderRadius: 16, padding: "12px 14px" }}>
+              <div
+                style={{
+                  background: hasRacha ? "linear-gradient(160deg, #FBEBD8, " + C.tileBg + ")" : C.tileBg,
+                  borderRadius: 16,
+                  padding: "12px 14px",
+                  boxShadow: hasRacha ? "0 0 0 1px rgba(194,112,60,0.18), 0 0 18px rgba(194,112,60,0.28)" : "none",
+                  transition: "box-shadow 0.3s ease",
+                }}
+              >
                 <div
                   style={{
                     width: 26,
@@ -327,6 +335,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                     alignItems: "center",
                     justifyContent: "center",
                     marginBottom: 8,
+                    boxShadow: hasRacha ? "0 0 10px rgba(194,112,60,0.45)" : "none",
                   }}
                 >
                   {hasRacha ? <Icon.Flame style={{ color: C.orange }} /> : <Icon.Leaf style={{ color: estadoColor, width: 14, height: 14 }} />}
@@ -334,7 +343,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                 <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
                   {hasRacha ? data.racha_riego : estadoLabel}
                 </p>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, margin: "1px 0 0" }}>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "1px 0 0" }}>
                   {hasRacha ? "riegos a tiempo seguidos" : "Estado general"}
                 </p>
               </div>
@@ -348,7 +357,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
             </div>
 
             {data.problemas_detectados && data.problemas_detectados.length > 0 && (
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 18 }}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: C.red, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
                   Se detectó
                 </p>
@@ -362,7 +371,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
             )}
 
             {data.consejos && data.consejos.length > 0 && (
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 18 }}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: C.inkSoft, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>
                   Consejos de cuidado
                 </p>
@@ -380,7 +389,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                 onClick={onSave}
                 disabled={saved}
                 style={{
-                  marginTop: 18,
+                  marginTop: 22,
                   width: "100%",
                   padding: "13px 0",
                   borderRadius: 14,
@@ -403,7 +412,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
         {compact && watering && (
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8 }}>
             <Icon.Droplet style={{ color: watering.urgent ? C.red : C.blue, width: 12, height: 12 }} />
-            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 600, color: watering.urgent ? C.red : C.inkSoft }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: watering.urgent ? C.red : C.inkSoft }}>
               {watering.label}
             </span>
           </div>
@@ -420,7 +429,7 @@ function DetailRow({ icon, label, text }) {
         {icon}
       </div>
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, margin: 0, fontWeight: 600 }}>{label}</p>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: 0, fontWeight: 600 }}>{label}</p>
         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.ink, margin: "1px 0 0", lineHeight: 1.4 }}>{text}</p>
       </div>
     </div>
@@ -543,7 +552,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         }}
       >
         <Icon.Leaf style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5, color: jardinActive ? C.green : "#B5A683" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: jardinActive ? C.green : "#B5A683" }}>
           Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
         </span>
       </button>
@@ -564,7 +573,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         }}
       >
         <Icon.Camera style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5, color: cameraActive ? C.green : "#B5A683" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: cameraActive ? C.green : "#B5A683" }}>
           Cámara
         </span>
       </button>
@@ -952,7 +961,7 @@ export default function BrotesApp() {
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
             <div style={{ padding: "18px 20px 4px" }}>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(245,239,221,0.5)", margin: 0 }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(245,239,221,0.5)", margin: 0 }}>
                 {captureMode === "followup" ? "Seguimiento de planta" : "Nueva planta"}
               </p>
               <h1 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 22, color: C.cream, margin: "3px 0 0", letterSpacing: "-0.01em" }}>
@@ -1012,12 +1021,12 @@ export default function BrotesApp() {
                   <button
                     onClick={() => removePhoto(i)}
                     aria-label="Quitar foto"
-                    style={{ position: "absolute", top: -6, right: -6, background: C.cream, border: "none", borderRadius: "50%", width: 22, height: 22, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    style={{ position: "absolute", top: -8, right: -8, background: C.cream, border: "none", borderRadius: "50%", width: 28, height: 28, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
                     <Icon.X />
                   </button>
                   {i === 0 && (
-                    <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(34,28,19,0.6)", color: C.cream, fontSize: 9, padding: "2px 6px", borderRadius: 6, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
+                    <span style={{ position: "absolute", bottom: 4, left: 4, background: "rgba(34,28,19,0.6)", color: C.cream, fontSize: 12, padding: "2px 6px", borderRadius: 6, fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
                       principal
                     </span>
                   )}
@@ -1077,7 +1086,7 @@ export default function BrotesApp() {
         {/* ---------------- RESULT ---------------- */}
         {screen === "result" && result && (
           <div style={{ padding: "20px 16px 6px", flex: 1, overflowY: "auto" }}>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: C.inkSoft, margin: "0 4px 12px" }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.05em", textTransform: "uppercase", color: C.inkSoft, margin: "0 4px 12px" }}>
               Diario de tus plantas
             </p>
             <PlantCard
@@ -1181,8 +1190,8 @@ export default function BrotesApp() {
                       onClick={enableNotifications}
                       aria-label="Activar recordatorios"
                       style={{
-                        width: 30,
-                        height: 30,
+                        width: 38,
+                        height: 38,
                         borderRadius: "50%",
                         background: C.tileBg,
                         border: "none",
@@ -1191,18 +1200,18 @@ export default function BrotesApp() {
                         justifyContent: "center",
                         cursor: "pointer",
                         color: C.ink,
-                        fontSize: 13,
+                        fontSize: 15,
                       }}
                     >
                       🔔
                     </button>
                   )}
                   {notifStatus === "subscribed" && (
-                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, color: C.green }}>🔔</span>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.green }}>🔔</span>
                   )}
                   <button
                     onClick={() => setScreen("sugerencias")}
-                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 4, opacity: 0.7 }}
+                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -5, opacity: 0.7, display: "flex", alignItems: "center", justifyContent: "center" }}
                     aria-label="Enviar sugerencia"
                   >
                     <Icon.Info style={{ width: 18, height: 18 }} />
@@ -1210,7 +1219,7 @@ export default function BrotesApp() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 16, overflowX: "auto", marginTop: 16, padding: "4px 2px 8px" }}>
+              <div style={{ display: "flex", gap: 16, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px" }}>
                 {garden.length > 0 && (() => {
                   const total = garden.length;
                   const saludables = garden.filter((p) => p.estado_general === "saludable").length;
@@ -1269,7 +1278,7 @@ export default function BrotesApp() {
                           <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: s.color }}>{s.valor}</span>
                         </div>
                       </div>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
                         {s.label}
                       </span>
                     </button>
@@ -1309,7 +1318,7 @@ export default function BrotesApp() {
                           {tip.emoji}
                         </div>
                       </div>
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10.5, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>
                         {tip.corto}
                       </span>
                     </button>
@@ -1397,7 +1406,7 @@ export default function BrotesApp() {
                           const { error } = await supabase.from("plantas").delete().eq("id", p.id);
                           if (error) console.error("Error borrando planta:", error);
                         }}
-                        style={{ position: "absolute", top: 8, right: 8, zIndex: 2, background: "rgba(34,28,19,0.55)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        style={{ position: "absolute", top: 6, right: 6, zIndex: 2, background: "rgba(34,28,19,0.55)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                       >
                         <Icon.X />
                       </button>
@@ -1441,7 +1450,7 @@ export default function BrotesApp() {
               }}
             />
 
-            <div style={{ marginTop: 22 }}>
+            <div style={{ marginTop: 28 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <Tag>Bitácora de crecimiento</Tag>
                 {activePlant.history.length >= 2 && (
@@ -1466,7 +1475,7 @@ export default function BrotesApp() {
                 )}
               </div>
               {compareMode && (
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: "2px 0 8px" }}>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: "2px 0 8px" }}>
                   Toca dos fotos para compararlas ({compareIndices.length}/2)
                 </p>
               )}
@@ -1490,7 +1499,7 @@ export default function BrotesApp() {
                           border: selected ? "3px solid " + C.pine : "1px solid " + C.creamLine,
                         }}
                       />
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: C.inkSoft, margin: "4px 0 0" }}>{h.date}</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "4px 0 0" }}>{h.date}</p>
                     </div>
                   );
                 })}
@@ -1504,13 +1513,13 @@ export default function BrotesApp() {
                   <div style={{ display: "flex", gap: 12, marginTop: 12, background: C.tileBg, borderRadius: 16, padding: 14 }}>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <img src={antes.imageUrl} alt="Antes" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 10 }} />
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11.5, color: C.ink, margin: "6px 0 0" }}>Antes</p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: C.inkSoft, margin: "2px 0 0" }}>{antes.date}</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, color: C.ink, margin: "6px 0 0" }}>Antes</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>{antes.date}</p>
                     </div>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <img src={despues.imageUrl} alt="Después" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 10 }} />
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11.5, color: C.ink, margin: "6px 0 0" }}>Después</p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, color: C.inkSoft, margin: "2px 0 0" }}>{despues.date}</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, color: C.ink, margin: "6px 0 0" }}>Después</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>{despues.date}</p>
                     </div>
                   </div>
                 );
@@ -1519,7 +1528,7 @@ export default function BrotesApp() {
 
             <button
               onClick={() => openCamera("followup", activePlant.id)}
-              style={{ marginTop: 16, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: C.pine, color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              style={{ marginTop: 22, width: "100%", padding: "13px 0", borderRadius: 12, border: "none", background: C.pine, color: C.cream, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
             >
               Tomar foto de seguimiento
             </button>
@@ -1635,7 +1644,7 @@ export default function BrotesApp() {
               <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Tip de cuidado
               </span>
-              <button onClick={() => setActiveTip(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 4 }}>
+              <button onClick={() => setActiveTip(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 10, margin: -10 }}>
                 <Icon.X style={{ width: 20, height: 20 }} />
               </button>
             </div>

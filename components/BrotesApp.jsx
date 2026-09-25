@@ -1424,11 +1424,8 @@ export default function BrotesApp() {
                       <img
                         src={stage.img}
                         alt={stage.label}
-                        style={{ width: 46, height: 46, objectFit: "contain" }}
+                        style={{ width: 74, height: 74, objectFit: "contain" }}
                       />
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.15 }}>
-                        {stage.label}
-                      </span>
                     </button>
                   );
                 })()}

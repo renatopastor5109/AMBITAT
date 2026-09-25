@@ -38,7 +38,7 @@ const ESTADO_COLOR = {
 };
 
 const FONTS_IMPORT = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&display=swap');
 
 .brotes-shell {
   width: 100%;
@@ -544,15 +544,18 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 3,
-          background: "transparent",
+          margin: "0 3px",
+          borderRadius: 18,
+          background: jardinActive ? C.green : "transparent",
           border: "none",
-          padding: "4px 0",
+          padding: "8px 0",
           cursor: "pointer",
-          color: jardinActive ? C.green : "#B5A683",
+          color: jardinActive ? "#fff" : "#B5A683",
+          transition: "background 0.2s ease, color 0.2s ease",
         }}
       >
         <Icon.Leaf style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: jardinActive ? C.green : "#B5A683" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: jardinActive ? "#fff" : "#B5A683" }}>
           Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
         </span>
       </button>
@@ -565,15 +568,18 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 3,
-          background: "transparent",
+          margin: "0 3px",
+          borderRadius: 18,
+          background: cameraActive ? C.green : "transparent",
           border: "none",
-          padding: "4px 0",
+          padding: "8px 0",
           cursor: "pointer",
-          color: cameraActive ? C.green : "#B5A683",
+          color: cameraActive ? "#fff" : "#B5A683",
+          transition: "background 0.2s ease, color 0.2s ease",
         }}
       >
         <Icon.Camera style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: cameraActive ? C.green : "#B5A683" }}>
+        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: cameraActive ? "#fff" : "#B5A683" }}>
           Cámara
         </span>
       </button>
@@ -1193,17 +1199,20 @@ export default function BrotesApp() {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                 <h1
                   style={{
-                    fontFamily: "'Inter', sans-serif",
-                    fontWeight: 800,
-                    fontSize: 30,
-                    letterSpacing: "-0.02em",
+                    fontFamily: "'Pacifico', cursive",
+                    fontWeight: 400,
+                    fontSize: 32,
                     color: C.ink,
                     margin: 0,
                   }}
                 >
                   Mi jardín
                 </h1>
-                <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto", flexShrink: 0 }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "0.01em", color: C.wood }}>ÁMB</span>
+                  <Icon.Leaf style={{ width: 15, height: 15, color: C.green, margin: "0 1px", transform: "rotate(8deg)" }} />
+                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "0.01em", color: C.green }}>TAT</span>
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft, margin: 0 }}>

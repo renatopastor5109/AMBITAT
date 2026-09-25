@@ -1208,11 +1208,7 @@ export default function BrotesApp() {
                 >
                   Mi jardín
                 </h1>
-                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "0.01em", color: C.wood }}>ÁMB</span>
-                  <Icon.Leaf style={{ width: 15, height: 15, color: C.green, margin: "0 1px", transform: "rotate(8deg)" }} />
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "0.01em", color: C.green }}>TAT</span>
-                </div>
+                <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto", flexShrink: 0 }} />
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft, margin: 0 }}>

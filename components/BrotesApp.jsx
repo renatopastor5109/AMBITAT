@@ -130,6 +130,43 @@ const TIPS = [
   { id: "humedad", emoji: "🌫️", corto: "Humedad", titulo: "Ambientes secos afectan más de lo que crees", texto: "El aire acondicionado y la calefacción bajan mucho la humedad. Agrupar varias plantas juntas ayuda a que se den un poco de humedad entre ellas." },
 ];
 
+// Etapas de crecimiento de la "plantita" del buzón de tips: evoluciona según
+// qué tan sano está el jardín en general y la mejor racha de riego que tengas,
+// como una recompensa visual por cuidar bien tus plantas.
+const GARDEN_STAGES = [
+  { min: 0, img: "/stages/s12.png", label: "Necesita ayuda urgente" },
+  { min: 1 / 12, img: "/stages/s10.png", label: "Se está marchitando" },
+  { min: 2 / 12, img: "/stages/s11.png", label: "Recuperándose" },
+  { min: 3 / 12, img: "/stages/s1.png", label: "Apenas germinando" },
+  { min: 4 / 12, img: "/stages/s2.png", label: "Brotando" },
+  { min: 5 / 12, img: "/stages/s3.png", label: "Echando raíces" },
+  { min: 6 / 12, img: "/stages/s4.png", label: "Creciendo bien" },
+  { min: 7 / 12, img: "/stages/s5.png", label: "Ganando fuerza" },
+  { min: 8 / 12, img: "/stages/s6.png", label: "Hecho un árbol" },
+  { min: 9 / 12, img: "/stages/s7.png", label: "Jardín floreciente" },
+  { min: 10 / 12, img: "/stages/s8.png", label: "Raíces profundas" },
+  { min: 11 / 12, img: "/stages/s9.png", label: "Jardín próspero" },
+];
+
+function getGardenStage(garden) {
+  if (!garden.length) return { img: "/stages/s1.png", label: "Tips de cuidado" };
+  const total = garden.length;
+  const saludables = garden.filter((p) => p.estado_general === "saludable").length;
+  const criticos = garden.filter((p) => p.estado_general === "critico").length;
+  const pctSaludable = saludables / total;
+  const maxRacha = Math.max(0, ...garden.map((p) => p.racha_riego || 0));
+  const streakScore = Math.min(maxRacha / 10, 1);
+
+  if (criticos / total >= 0.5) return GARDEN_STAGES[0];
+
+  const score = pctSaludable * 0.6 + streakScore * 0.4;
+  let stage = GARDEN_STAGES[0];
+  for (const s of GARDEN_STAGES) {
+    if (score >= s.min) stage = s;
+  }
+  return stage;
+}
+
 function ordenarJardin(plantas, criterio) {
   const copia = [...plantas];
   if (criterio === "nombre") {
@@ -1341,6 +1378,7 @@ export default function BrotesApp() {
                 {(() => {
                   const pendientes = TIPS.filter((t) => !viewedTips.includes(t.id)).length;
                   const primerPendiente = TIPS.findIndex((t) => !viewedTips.includes(t.id));
+                  const stage = getGardenStage(garden);
                   return (
                     <button
                       onClick={() => openTip(primerPendiente >= 0 ? primerPendiente : 0)}
@@ -1383,9 +1421,13 @@ export default function BrotesApp() {
                           {pendientes}
                         </span>
                       )}
-                      <span style={{ fontSize: 30 }}>🌱</span>
+                      <img
+                        src={stage.img}
+                        alt={stage.label}
+                        style={{ width: 46, height: 46, objectFit: "contain" }}
+                      />
                       <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.15 }}>
-                        Tips de cuidado
+                        {stage.label}
                       </span>
                     </button>
                   );

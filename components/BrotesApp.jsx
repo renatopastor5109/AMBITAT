@@ -122,9 +122,25 @@ const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
 // Precio de la visita de mantenimiento (en centavos, como los pide Stripe).
 // Cámbialo aquí si quieres ajustar el precio — no requiere tocar nada más.
-const PRECIO_MANTENIMIENTO_CENTAVOS = 20000; // $200.00 MXN
+const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
 
 const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
+
+// Viveros y tiendas de plantas en CDMX, repartidos por zona. "mapsUrl" abre
+// el lugar directo en Google Maps usando su place_id — sin necesidad de
+// pedir permisos de ubicación ni configurar una API de mapas en la app.
+const VIVEROS = [
+  { nombre: "Mercado De Plantas", zona: "Coyoacán", direccion: "Calle Melchor Ocampo 4, Del Carmen, Coyoacán", rating: 4.6, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJH3lj_-n_0YUR6OzHY323WJ4" },
+  { nombre: "Vivero del Bosque", zona: "Coyoacán", direccion: "Av. México / Melchor Ocampo 100, Del Carmen, Coyoacán", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJ0WtfBOr_0YUR8RuhOftH6Gg" },
+  { nombre: "Botéo Lomas", zona: "Lomas de Chapultepec", direccion: "Barrilaco 365A, Lomas de Chapultepec, Miguel Hidalgo", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJNRMRKQUB0oURZzNHWuli7Ck" },
+  { nombre: "Sucu Sucu", zona: "Polanco", direccion: "Av. Isaac Newton 178, Polanco V Secc, Miguel Hidalgo", rating: 4.3, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJwybt4Vf50YURTeF5kOTcUDQ" },
+  { nombre: "Botéo Condesa", zona: "Condesa", direccion: "C. Atlixco 13, Colonia Condesa, Cuauhtémoc", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJne5-_1H_0YURmq6XOJ_QdK0" },
+  { nombre: "Vivero 64", zona: "Roma Norte", direccion: "C. de Chiapas 64, Roma Nte., Cuauhtémoc", rating: 4.5, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJvSldLLD_0YURoQNSkUWDtlQ" },
+  { nombre: "Plantería Mary", zona: "Roma Sur", direccion: "Quintana Roo 49A, Roma Sur, Cuauhtémoc", rating: 4.4, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJ-1EB3hv_0YURBZaxTktNdhg" },
+  { nombre: "Vinde Garden Center", zona: "Gustavo A. Madero", direccion: "Av. Talismán 45B, Col. Estrella, Gustavo A. Madero", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJg5VTlUL50YURJX8Z5q19mhs" },
+  { nombre: "Madreselva Xochimilco", zona: "Xochimilco", direccion: "C. Madreselva, Xaltocan, Xochimilco", rating: 4.7, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJqz07ABYBzoURqZHPq6ZzknY" },
+  { nombre: "Mercado de Plantas Cuemanco", zona: "Xochimilco", direccion: "Av. Canal Nacional 2000, Coapa, Cuemanco, Xochimilco", rating: 4.7, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJsfF52ysCzoURGFvC0x7gPrw" },
+];
 
 // Tips generales de cuidado, para los circulitos tipo "Stories" del jardín
 const TIPS = [
@@ -566,6 +582,18 @@ const Icon = {
       <path d="M15.5 14.2c2.6.4 4.5 2.6 4.5 5.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  MapPin: (p) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
+      <path d="M12 21s-7-6.3-7-11.5A7 7 0 0119 9.5C19 14.7 12 21 12 21z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <circle cx="12" cy="9.5" r="2.4" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
+  ExternalLink: (p) => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" {...p}>
+      <path d="M9 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 4h6v6M20 4l-9 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   Heart: (p) => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
       <path d="M12 20.5s-7.5-4.6-9.8-9.4C0.8 7.6 2.6 4 6.3 4c2 0 3.6 1.1 4.7 2.8C12.1 5.1 13.7 4 15.7 4c3.7 0 5.5 3.6 4.1 7.1C17.5 15.9 12 20.5 12 20.5z" fill="currentColor" />
@@ -616,9 +644,9 @@ function BottomNav({ screen, setScreen, gardenCount }) {
     },
     {
       key: "comunidad",
-      active: screen === "comunidad" || screen === "publicar",
+      active: screen === "comunidad",
       onClick: () => setScreen("comunidad"),
-      icon: Icon.Users,
+      icon: Icon.MapPin,
       label: "Comunidad",
     },
     {
@@ -785,129 +813,9 @@ export default function BrotesApp() {
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
 
-  // ---------- Comunidad ----------
-  const [miNombre, setMiNombre] = useState("");
-  const [nombreListo, setNombreListo] = useState(false);
-  const [nombreDraft, setNombreDraft] = useState("");
-  const [guardandoNombre, setGuardandoNombre] = useState(false);
-  const [feed, setFeed] = useState([]);
-  const [cargandoFeed, setCargandoFeed] = useState(true);
-  const [misLikes, setMisLikes] = useState([]); // ids de publicaciones que ya di like
-  const postFileRef = useRef(null);
-  const [postFoto, setPostFoto] = useState(null);
-  const [postFotoUrl, setPostFotoUrl] = useState(null);
-  const [postTexto, setPostTexto] = useState("");
-  const [publicando, setPublicando] = useState(false);
-  const [publicarError, setPublicarError] = useState(null);
-
-  async function cargarPerfil(uid) {
-    const { data } = await supabase.from("perfiles").select("nombre").eq("user_id", uid).maybeSingle();
-    if (data?.nombre) {
-      setMiNombre(data.nombre);
-      setNombreListo(true);
-    }
-  }
-
-  async function guardarNombrePerfil() {
-    const nombre = nombreDraft.trim();
-    if (!nombre || !userId) return;
-    setGuardandoNombre(true);
-    const { error } = await supabase.from("perfiles").upsert({ user_id: userId, nombre });
-    setGuardandoNombre(false);
-    if (!error) {
-      setMiNombre(nombre);
-      setNombreListo(true);
-    } else {
-      console.error("Error guardando nombre:", error);
-    }
-  }
-
-  async function cargarFeed() {
-    setCargandoFeed(true);
-    const { data, error } = await supabase
-      .from("publicaciones")
-      .select("*, perfiles(nombre)")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (!error && data) {
-      const { data: likesData } = userId
-        ? await supabase.from("publicaciones_likes").select("publicacion_id").eq("user_id", userId)
-        : { data: [] };
-      setMisLikes((likesData || []).map((l) => l.publicacion_id));
-
-      // cuenta de likes por publicación
-      const ids = data.map((p) => p.id);
-      let conteos = {};
-      if (ids.length > 0) {
-        const { data: todosLikes } = await supabase.from("publicaciones_likes").select("publicacion_id").in("publicacion_id", ids);
-        (todosLikes || []).forEach((l) => {
-          conteos[l.publicacion_id] = (conteos[l.publicacion_id] || 0) + 1;
-        });
-      }
-      setFeed(data.map((p) => ({ ...p, likesCount: conteos[p.id] || 0 })));
-    }
-    setCargandoFeed(false);
-  }
-
-  function handlePostFile(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setPostFoto(file);
-    setPostFotoUrl(URL.createObjectURL(file));
-  }
-
-  async function crearPublicacion() {
-    if (!userId || (!postTexto.trim() && !postFoto)) return;
-    setPublicando(true);
-    setPublicarError(null);
-
-    let imagen_url = null;
-    if (postFoto) {
-      const path = `${userId}/${Date.now()}-${postFoto.name}`;
-      const { error: uploadError } = await supabase.storage.from("community-photos").upload(path, postFoto);
-      if (uploadError) {
-        console.error("Error subiendo foto:", uploadError);
-        setPublicando(false);
-        setPublicarError("No pudimos subir la foto. Intenta de nuevo.");
-        return;
-      }
-      const { data } = supabase.storage.from("community-photos").getPublicUrl(path);
-      imagen_url = data.publicUrl;
-    }
-
-    const { error } = await supabase.from("publicaciones").insert({
-      user_id: userId,
-      texto: postTexto.trim() || null,
-      imagen_url,
-    });
-    setPublicando(false);
-    if (error) {
-      console.error("Error publicando:", error);
-      setPublicarError("No pudimos publicar. Intenta de nuevo.");
-      return;
-    }
-    setPostTexto("");
-    setPostFoto(null);
-    setPostFotoUrl(null);
-    setScreen("comunidad");
-    cargarFeed();
-  }
-
-  async function toggleLike(publicacionId) {
-    if (!userId) return;
-    const yaLeDiLike = misLikes.includes(publicacionId);
-    // actualización optimista para que se sienta instantáneo
-    setMisLikes((prev) => (yaLeDiLike ? prev.filter((id) => id !== publicacionId) : [...prev, publicacionId]));
-    setFeed((prev) =>
-      prev.map((p) => (p.id === publicacionId ? { ...p, likesCount: p.likesCount + (yaLeDiLike ? -1 : 1) } : p))
-    );
-    if (yaLeDiLike) {
-      await supabase.from("publicaciones_likes").delete().eq("publicacion_id", publicacionId).eq("user_id", userId);
-    } else {
-      await supabase.from("publicaciones_likes").insert({ publicacion_id: publicacionId, user_id: userId });
-    }
-  }
+  // ---------- Comunidad (viveros cercanos) ----------
+  // Por ahora es un directorio estático de viveros/tiendas de plantas en
+  // CDMX (datos reales de Google) en vez de un feed de publicaciones.
 
   // ---------- Tienda: reservar mantenimiento ----------
   const [reservaNombre, setReservaNombre] = useState("");
@@ -1025,7 +933,6 @@ export default function BrotesApp() {
         const uid = activeSession.user.id;
         setUserId(uid);
         await loadGarden(uid);
-        cargarPerfil(uid);
         cargarReservaciones(uid);
       }
       setLoadingGarden(false);
@@ -1044,10 +951,6 @@ export default function BrotesApp() {
       }
     }
   }, []);
-
-  useEffect(() => {
-    if (screen === "comunidad") cargarFeed();
-  }, [screen, userId]);
 
   useEffect(() => {
     async function checkNotifStatus() {
@@ -1274,7 +1177,6 @@ export default function BrotesApp() {
       <div className="brotes-shell">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
-        <input ref={postFileRef} type="file" accept="image/*" onChange={handlePostFile} style={{ display: "none" }} />
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -2017,177 +1919,56 @@ export default function BrotesApp() {
               Comunidad
             </h1>
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: "0 0 16px" }}>
-              Comparte cómo va tu jardín con tus vecinos.
+              Viveros y tiendas de plantas cerca de ti.
             </p>
 
-            {!nombreListo ? (
-              <div style={{ background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 16 }}>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: C.ink, margin: "0 0 4px" }}>
-                  ¿Cómo te llamas?
-                </p>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.4 }}>
-                  Así te van a ver tus vecinos en la comunidad. Solo se pide una vez.
-                </p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    value={nombreDraft}
-                    onChange={(e) => setNombreDraft(e.target.value)}
-                    placeholder="Tu nombre"
-                    style={{
-                      flex: 1,
-                      border: "1px solid " + C.cardLine,
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: 14,
-                      color: C.ink,
-                      background: C.tileBg,
-                    }}
-                  />
-                  <button
-                    onClick={guardarNombrePerfil}
-                    disabled={!nombreDraft.trim() || guardandoNombre}
-                    style={{
-                      background: !nombreDraft.trim() || guardandoNombre ? C.cardLine : C.green,
-                      color: !nombreDraft.trim() || guardandoNombre ? C.inkSoft : "#fff",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "0 18px",
-                      fontFamily: "'Inter', sans-serif",
-                      fontWeight: 700,
-                      fontSize: 13.5,
-                      cursor: !nombreDraft.trim() || guardandoNombre ? "default" : "pointer",
-                    }}
-                  >
-                    Listo
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", marginBottom: 16 }}>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 8px" }}>
-                  Publicando como <strong style={{ color: C.ink }}>{miNombre}</strong>
-                </p>
-                <textarea
-                  value={postTexto}
-                  onChange={(e) => setPostTexto(e.target.value)}
-                  placeholder="¿Cómo va tu jardín esta semana?"
-                  rows={2}
+            {VIVEROS.map((viv, i) => (
+              <a
+                key={i}
+                href={viv.mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  background: C.card,
+                  borderRadius: 18,
+                  padding: "14px 16px",
+                  marginBottom: 10,
+                  textDecoration: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <div
                   style={{
-                    width: "100%",
-                    border: "1px solid " + C.cardLine,
-                    borderRadius: 10,
-                    padding: 10,
-                    fontFamily: "'Inter', sans-serif",
-                    fontSize: 13.5,
-                    color: C.ink,
-                    resize: "none",
-                    boxSizing: "border-box",
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
                     background: C.tileBg,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    color: C.green,
                   }}
-                />
-                {postFotoUrl && (
-                  <div style={{ position: "relative", width: 72, height: 72, marginTop: 8 }}>
-                    <img src={postFotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10 }} />
-                    <button
-                      onClick={() => {
-                        setPostFoto(null);
-                        setPostFotoUrl(null);
-                      }}
-                      aria-label="Quitar foto"
-                      style={{ position: "absolute", top: -8, right: -8, background: C.card, border: "none", borderRadius: "50%", width: 26, height: 26, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                    >
-                      <Icon.X />
-                    </button>
-                  </div>
-                )}
-                {publicarError && (
-                  <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12, margin: "8px 0 0" }}>{publicarError}</p>
-                )}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-                  <button
-                    onClick={() => postFileRef.current?.click()}
-                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 8, margin: -8, display: "flex", alignItems: "center", justifyContent: "center" }}
-                    aria-label="Agregar foto"
-                  >
-                    <Icon.Gallery />
-                  </button>
-                  <button
-                    onClick={crearPublicacion}
-                    disabled={publicando || (!postTexto.trim() && !postFoto)}
-                    style={{
-                      background: publicando || (!postTexto.trim() && !postFoto) ? C.cardLine : C.green,
-                      color: publicando || (!postTexto.trim() && !postFoto) ? C.inkSoft : "#fff",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "9px 20px",
-                      fontFamily: "'Inter', sans-serif",
-                      fontWeight: 700,
-                      fontSize: 13,
-                      cursor: publicando || (!postTexto.trim() && !postFoto) ? "default" : "pointer",
-                    }}
-                  >
-                    {publicando ? "Publicando..." : "Publicar"}
-                  </button>
+                >
+                  <Icon.MapPin />
                 </div>
-              </div>
-            )}
-
-            {cargandoFeed ? (
-              <p style={{ textAlign: "center", padding: "40px 0", fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>
-                Cargando publicaciones...
-              </p>
-            ) : feed.length === 0 ? (
-              <p style={{ textAlign: "center", padding: "40px 20px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft }}>
-                Todavía no hay publicaciones. ¡Sé la primera persona en compartir algo! 🌱
-              </p>
-            ) : (
-              feed.map((post) => {
-                const leDiLike = misLikes.includes(post.id);
-                const fecha = new Date(post.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
-                return (
-                  <div key={post.id} style={{ background: C.card, borderRadius: 18, padding: "14px 16px", marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, color: C.ink, margin: 0 }}>
-                        {post.perfiles?.nombre || "Vecino"}
-                      </p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: 0 }}>{fecha}</p>
-                    </div>
-                    {post.texto && (
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: "8px 0 0", lineHeight: 1.45 }}>
-                        {post.texto}
-                      </p>
-                    )}
-                    {post.imagen_url && (
-                      <img
-                        src={post.imagen_url}
-                        alt=""
-                        style={{ width: "100%", maxHeight: 260, objectFit: "cover", borderRadius: 14, marginTop: 10 }}
-                      />
-                    )}
-                    <button
-                      onClick={() => toggleLike(post.id)}
-                      style={{
-                        marginTop: 10,
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "6px 4px",
-                        marginLeft: -4,
-                      }}
-                    >
-                      <Icon.Heart style={{ color: leDiLike ? C.red : C.cardLine, width: 18, height: 18 }} />
-                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: C.inkSoft }}>
-                        {post.likesCount || 0}
-                      </span>
-                    </button>
-                  </div>
-                );
-              })
-            )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14.5, color: C.ink, margin: 0 }}>
+                    {viv.nombre}
+                  </p>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>
+                    {viv.zona} · {viv.direccion}
+                  </p>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.gold, fontWeight: 700, margin: "4px 0 0" }}>
+                    ★ {viv.rating}
+                  </p>
+                </div>
+                <Icon.ExternalLink style={{ color: C.inkSoft, flexShrink: 0 }} />
+              </a>
+            ))}
           </div>
         )}
 

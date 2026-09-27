@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   // Acepta el formato nuevo (varias fotos) y sigue aceptando el viejo
   // (una sola foto) por si algo todavía manda el formato anterior.
-  const { images, imageBase64, mediaType } = req.body || {};
+  const { images, imageBase64, mediaType, nombreSugerido } = req.body || {};
   const photos = images && images.length ? images : imageBase64 ? [{ base64: imageBase64, mediaType }] : [];
 
   if (photos.length === 0) {
@@ -34,10 +34,15 @@ export default async function handler(req, res) {
       source: { type: "base64", media_type: p.mediaType || "image/jpeg", data: p.base64 },
     }));
 
-    const instrucciones =
+    let instrucciones =
       photos.length > 1
         ? `Identifica esta planta y evalúa su estado de salud. Te mando ${photos.length} fotos de la MISMA planta desde distintos ángulos (por ejemplo hoja de cerca, planta completa, tallo) —úsalas en conjunto para dar una identificación más precisa, no las trates como plantas distintas.`
         : "Identifica esta planta y evalúa su estado de salud.";
+
+    const pistaNombre = (nombreSugerido || "").trim();
+    if (pistaNombre) {
+      instrucciones += ` La persona cree que esta planta podría llamarse o parecerse a "${pistaNombre}" — usa esto solo como punto de partida para orientar tu búsqueda, pero confía en lo que ves en la foto: si la imagen claramente muestra otra especie, identifica la que realmente aparece en la foto y no fuerces la coincidencia con ese nombre.`;
+    }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

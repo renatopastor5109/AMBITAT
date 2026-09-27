@@ -120,6 +120,12 @@ function getWateringStatus(plant) {
 // Orden de prioridad para ordenar por estado de salud: lo que necesita atención primero
 const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
+// Precio de la visita de mantenimiento (en centavos, como los pide Stripe).
+// Cámbialo aquí si quieres ajustar el precio — no requiere tocar nada más.
+const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
+
+const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
+
 // Tips generales de cuidado, para los circulitos tipo "Stories" del jardín
 const TIPS = [
   { id: "riego", emoji: "💧", corto: "Riego", titulo: "El error más común: regar de más", texto: "Más plantas mueren por exceso de riego que por falta de agua. Antes de regar, mete un dedo 2-3 cm en la tierra — si se siente húmeda, espera un día más." },
@@ -552,19 +558,84 @@ const Icon = {
       <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor" />
     </svg>
   ),
+  Users: (p) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
+      <circle cx="9" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="17" cy="8.5" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M15.5 14.2c2.6.4 4.5 2.6 4.5 5.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  Heart: (p) => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
+      <path d="M12 20.5s-7.5-4.6-9.8-9.4C0.8 7.6 2.6 4 6.3 4c2 0 3.6 1.1 4.7 2.8C12.1 5.1 13.7 4 15.7 4c3.7 0 5.5 3.6 4.1 7.1C17.5 15.9 12 20.5 12 20.5z" fill="currentColor" />
+    </svg>
+  ),
+  Cart: (p) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
+      <path d="M3 4h2l2.2 11.2a2 2 0 002 1.8h7.6a2 2 0 002-1.6L20 8H6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="10" cy="20" r="1.4" fill="currentColor" />
+      <circle cx="17" cy="20" r="1.4" fill="currentColor" />
+    </svg>
+  ),
+  Plus: (p) => (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" {...p}>
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" />
+    </svg>
+  ),
+  Calendar: (p) => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
+      <rect x="3.5" y="5" width="17" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  Card: (p) => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
+      <rect x="2.5" y="5.5" width="19" height="13" rx="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M2.5 9.5h19" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
 };
 
 // ---------- Nav inferior flotante ----------
 function BottomNav({ screen, setScreen, gardenCount }) {
-  const jardinActive = screen === "jardin";
-  const cameraActive = screen === "camera" || screen === "fotos" || screen === "analyzing" || screen === "result";
+  const items = [
+    {
+      key: "jardin",
+      active: screen === "jardin",
+      onClick: () => setScreen("jardin"),
+      icon: Icon.Leaf,
+      label: `Jardín${gardenCount ? ` (${gardenCount})` : ""}`,
+    },
+    {
+      key: "camera",
+      active: screen === "camera" || screen === "fotos" || screen === "analyzing" || screen === "result",
+      onClick: () => setScreen("camera"),
+      icon: Icon.Camera,
+      label: "Cámara",
+    },
+    {
+      key: "comunidad",
+      active: screen === "comunidad" || screen === "publicar",
+      onClick: () => setScreen("comunidad"),
+      icon: Icon.Users,
+      label: "Comunidad",
+    },
+    {
+      key: "tienda",
+      active: screen === "tienda",
+      onClick: () => setScreen("tienda"),
+      icon: Icon.Cart,
+      label: "Tienda",
+    },
+  ];
   return (
     <div
       style={{
         display: "flex",
         alignItems: "stretch",
         margin: "0 16px 16px",
-        padding: "10px 6px 8px",
+        padding: "8px 4px 6px",
         borderRadius: 22,
         background: "rgba(245,239,221,0.92)",
         borderTop: "1px solid " + C.cardLine,
@@ -572,54 +643,41 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         backdropFilter: "blur(20px)",
       }}
     >
-      <button
-        onClick={() => setScreen("jardin")}
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 3,
-          margin: "0 3px",
-          borderRadius: 18,
-          background: jardinActive ? C.green : "transparent",
-          border: "none",
-          padding: "8px 0",
-          cursor: "pointer",
-          color: jardinActive ? "#fff" : "#B5A683",
-          transition: "background 0.2s ease, color 0.2s ease",
-        }}
-      >
-        <Icon.Leaf style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: jardinActive ? "#fff" : "#B5A683" }}>
-          Mi jardín{gardenCount ? ` (${gardenCount})` : ""}
-        </span>
-      </button>
-      <button
-        onClick={() => setScreen("camera")}
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 3,
-          margin: "0 3px",
-          borderRadius: 18,
-          background: cameraActive ? C.green : "transparent",
-          border: "none",
-          padding: "8px 0",
-          cursor: "pointer",
-          color: cameraActive ? "#fff" : "#B5A683",
-          transition: "background 0.2s ease, color 0.2s ease",
-        }}
-      >
-        <Icon.Camera style={{ width: 22, height: 22 }} />
-        <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: cameraActive ? "#fff" : "#B5A683" }}>
-          Cámara
-        </span>
-      </button>
+      {items.map((item) => (
+        <button
+          key={item.key}
+          onClick={item.onClick}
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 2,
+            margin: "0 2px",
+            borderRadius: 16,
+            background: item.active ? C.green : "transparent",
+            border: "none",
+            padding: "7px 0",
+            cursor: "pointer",
+            color: item.active ? "#fff" : "#B5A683",
+            transition: "background 0.2s ease, color 0.2s ease",
+          }}
+        >
+          <item.icon style={{ width: 19, height: 19 }} />
+          <span
+            style={{
+              fontFamily: "'Inter', sans-serif",
+              fontWeight: 600,
+              fontSize: 11,
+              color: item.active ? "#fff" : "#B5A683",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.label}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -727,6 +785,201 @@ export default function BrotesApp() {
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
 
+  // ---------- Comunidad ----------
+  const [miNombre, setMiNombre] = useState("");
+  const [nombreListo, setNombreListo] = useState(false);
+  const [nombreDraft, setNombreDraft] = useState("");
+  const [guardandoNombre, setGuardandoNombre] = useState(false);
+  const [feed, setFeed] = useState([]);
+  const [cargandoFeed, setCargandoFeed] = useState(true);
+  const [misLikes, setMisLikes] = useState([]); // ids de publicaciones que ya di like
+  const postFileRef = useRef(null);
+  const [postFoto, setPostFoto] = useState(null);
+  const [postFotoUrl, setPostFotoUrl] = useState(null);
+  const [postTexto, setPostTexto] = useState("");
+  const [publicando, setPublicando] = useState(false);
+  const [publicarError, setPublicarError] = useState(null);
+
+  async function cargarPerfil(uid) {
+    const { data } = await supabase.from("perfiles").select("nombre").eq("user_id", uid).maybeSingle();
+    if (data?.nombre) {
+      setMiNombre(data.nombre);
+      setNombreListo(true);
+    }
+  }
+
+  async function guardarNombrePerfil() {
+    const nombre = nombreDraft.trim();
+    if (!nombre || !userId) return;
+    setGuardandoNombre(true);
+    const { error } = await supabase.from("perfiles").upsert({ user_id: userId, nombre });
+    setGuardandoNombre(false);
+    if (!error) {
+      setMiNombre(nombre);
+      setNombreListo(true);
+    } else {
+      console.error("Error guardando nombre:", error);
+    }
+  }
+
+  async function cargarFeed() {
+    setCargandoFeed(true);
+    const { data, error } = await supabase
+      .from("publicaciones")
+      .select("*, perfiles(nombre)")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (!error && data) {
+      const { data: likesData } = userId
+        ? await supabase.from("publicaciones_likes").select("publicacion_id").eq("user_id", userId)
+        : { data: [] };
+      setMisLikes((likesData || []).map((l) => l.publicacion_id));
+
+      // cuenta de likes por publicación
+      const ids = data.map((p) => p.id);
+      let conteos = {};
+      if (ids.length > 0) {
+        const { data: todosLikes } = await supabase.from("publicaciones_likes").select("publicacion_id").in("publicacion_id", ids);
+        (todosLikes || []).forEach((l) => {
+          conteos[l.publicacion_id] = (conteos[l.publicacion_id] || 0) + 1;
+        });
+      }
+      setFeed(data.map((p) => ({ ...p, likesCount: conteos[p.id] || 0 })));
+    }
+    setCargandoFeed(false);
+  }
+
+  function handlePostFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPostFoto(file);
+    setPostFotoUrl(URL.createObjectURL(file));
+  }
+
+  async function crearPublicacion() {
+    if (!userId || (!postTexto.trim() && !postFoto)) return;
+    setPublicando(true);
+    setPublicarError(null);
+
+    let imagen_url = null;
+    if (postFoto) {
+      const path = `${userId}/${Date.now()}-${postFoto.name}`;
+      const { error: uploadError } = await supabase.storage.from("community-photos").upload(path, postFoto);
+      if (uploadError) {
+        console.error("Error subiendo foto:", uploadError);
+        setPublicando(false);
+        setPublicarError("No pudimos subir la foto. Intenta de nuevo.");
+        return;
+      }
+      const { data } = supabase.storage.from("community-photos").getPublicUrl(path);
+      imagen_url = data.publicUrl;
+    }
+
+    const { error } = await supabase.from("publicaciones").insert({
+      user_id: userId,
+      texto: postTexto.trim() || null,
+      imagen_url,
+    });
+    setPublicando(false);
+    if (error) {
+      console.error("Error publicando:", error);
+      setPublicarError("No pudimos publicar. Intenta de nuevo.");
+      return;
+    }
+    setPostTexto("");
+    setPostFoto(null);
+    setPostFotoUrl(null);
+    setScreen("comunidad");
+    cargarFeed();
+  }
+
+  async function toggleLike(publicacionId) {
+    if (!userId) return;
+    const yaLeDiLike = misLikes.includes(publicacionId);
+    // actualización optimista para que se sienta instantáneo
+    setMisLikes((prev) => (yaLeDiLike ? prev.filter((id) => id !== publicacionId) : [...prev, publicacionId]));
+    setFeed((prev) =>
+      prev.map((p) => (p.id === publicacionId ? { ...p, likesCount: p.likesCount + (yaLeDiLike ? -1 : 1) } : p))
+    );
+    if (yaLeDiLike) {
+      await supabase.from("publicaciones_likes").delete().eq("publicacion_id", publicacionId).eq("user_id", userId);
+    } else {
+      await supabase.from("publicaciones_likes").insert({ publicacion_id: publicacionId, user_id: userId });
+    }
+  }
+
+  // ---------- Tienda: reservar mantenimiento ----------
+  const [reservaNombre, setReservaNombre] = useState("");
+  const [reservaTelefono, setReservaTelefono] = useState("");
+  const [reservaCorreo, setReservaCorreo] = useState("");
+  const [reservaFecha, setReservaFecha] = useState("");
+  const [reservaHora, setReservaHora] = useState(HORARIOS_DISPONIBLES[0]);
+  const [reservaNotas, setReservaNotas] = useState("");
+  const [reservando, setReservando] = useState(false);
+  const [reservaError, setReservaError] = useState(null);
+  const [misReservaciones, setMisReservaciones] = useState([]);
+  const [cargandoReservaciones, setCargandoReservaciones] = useState(true);
+  const [pagoStatus, setPagoStatus] = useState(null); // 'exito' | 'cancelado' | null
+
+  async function cargarReservaciones(uid) {
+    setCargandoReservaciones(true);
+    const { data, error } = await supabase
+      .from("reservaciones")
+      .select("*")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+    if (!error && data) setMisReservaciones(data);
+    setCargandoReservaciones(false);
+  }
+
+  async function reservarYPagar() {
+    if (!userId) return;
+    if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha) {
+      setReservaError("Completa tu nombre, teléfono, correo y la fecha para continuar.");
+      return;
+    }
+    setReservando(true);
+    setReservaError(null);
+
+    const { data: nuevaReservacion, error } = await supabase
+      .from("reservaciones")
+      .insert({
+        user_id: userId,
+        nombre_contacto: reservaNombre.trim(),
+        telefono: reservaTelefono.trim(),
+        correo: reservaCorreo.trim(),
+        fecha: reservaFecha,
+        hora: reservaHora,
+        notas: reservaNotas.trim() || null,
+        precio_centavos: PRECIO_MANTENIMIENTO_CENTAVOS,
+      })
+      .select()
+      .single();
+
+    if (error || !nuevaReservacion) {
+      console.error("Error creando reservación:", error);
+      setReservando(false);
+      setReservaError("No pudimos crear tu reservación. Intenta de nuevo.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/crear-sesion-pago", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservacionId: nuevaReservacion.id }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.url) throw new Error(data.error || "Error al iniciar el pago");
+      window.location.href = data.url; // redirige a Stripe Checkout (tarjeta u OXXO)
+    } catch (err) {
+      console.error("Error iniciando pago:", err);
+      setReservando(false);
+      setReservaError("No pudimos iniciar el pago. Intenta de nuevo.");
+    }
+  }
+
   function rowToPlant(row) {
     return {
       id: row.id,
@@ -769,13 +1022,32 @@ export default function BrotesApp() {
         activeSession = data.session;
       }
       if (activeSession) {
-        setUserId(activeSession.user.id);
-        await loadGarden(activeSession.user.id);
+        const uid = activeSession.user.id;
+        setUserId(uid);
+        await loadGarden(uid);
+        cargarPerfil(uid);
+        cargarReservaciones(uid);
       }
       setLoadingGarden(false);
     }
     initAuth();
+
+    // Si venimos de regreso de Stripe (?pago=exito / ?pago=cancelado), lo mostramos
+    // y limpiamos la URL para que no se repita si la persona recarga la página.
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const pago = params.get("pago");
+      if (pago === "exito" || pago === "cancelado") {
+        setPagoStatus(pago);
+        setScreen("tienda");
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    if (screen === "comunidad") cargarFeed();
+  }, [screen, userId]);
 
   useEffect(() => {
     async function checkNotifStatus() {
@@ -1002,6 +1274,7 @@ export default function BrotesApp() {
       <div className="brotes-shell">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+        <input ref={postFileRef} type="file" accept="image/*" onChange={handlePostFile} style={{ display: "none" }} />
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -1723,6 +1996,375 @@ export default function BrotesApp() {
                     {sugerenciaEnviando ? "Enviando..." : "Enviar sugerencia"}
                   </button>
                 </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ---------------- COMUNIDAD ---------------- */}
+        {screen === "comunidad" && (
+          <div style={{ padding: "18px 16px 10px", flex: 1, overflowY: "auto" }}>
+            <h1
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 800,
+                fontSize: 24,
+                letterSpacing: "-0.01em",
+                color: C.ink,
+                margin: "0 0 4px",
+              }}
+            >
+              Comunidad
+            </h1>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: "0 0 16px" }}>
+              Comparte cómo va tu jardín con tus vecinos.
+            </p>
+
+            {!nombreListo ? (
+              <div style={{ background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 16 }}>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: C.ink, margin: "0 0 4px" }}>
+                  ¿Cómo te llamas?
+                </p>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.4 }}>
+                  Así te van a ver tus vecinos en la comunidad. Solo se pide una vez.
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={nombreDraft}
+                    onChange={(e) => setNombreDraft(e.target.value)}
+                    placeholder="Tu nombre"
+                    style={{
+                      flex: 1,
+                      border: "1px solid " + C.cardLine,
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: 14,
+                      color: C.ink,
+                      background: C.tileBg,
+                    }}
+                  />
+                  <button
+                    onClick={guardarNombrePerfil}
+                    disabled={!nombreDraft.trim() || guardandoNombre}
+                    style={{
+                      background: !nombreDraft.trim() || guardandoNombre ? C.cardLine : C.green,
+                      color: !nombreDraft.trim() || guardandoNombre ? C.inkSoft : "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "0 18px",
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 700,
+                      fontSize: 13.5,
+                      cursor: !nombreDraft.trim() || guardandoNombre ? "default" : "pointer",
+                    }}
+                  >
+                    Listo
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ background: C.card, borderRadius: 18, padding: "14px 16px", marginBottom: 16 }}>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 8px" }}>
+                  Publicando como <strong style={{ color: C.ink }}>{miNombre}</strong>
+                </p>
+                <textarea
+                  value={postTexto}
+                  onChange={(e) => setPostTexto(e.target.value)}
+                  placeholder="¿Cómo va tu jardín esta semana?"
+                  rows={2}
+                  style={{
+                    width: "100%",
+                    border: "1px solid " + C.cardLine,
+                    borderRadius: 10,
+                    padding: 10,
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 13.5,
+                    color: C.ink,
+                    resize: "none",
+                    boxSizing: "border-box",
+                    background: C.tileBg,
+                  }}
+                />
+                {postFotoUrl && (
+                  <div style={{ position: "relative", width: 72, height: 72, marginTop: 8 }}>
+                    <img src={postFotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 10 }} />
+                    <button
+                      onClick={() => {
+                        setPostFoto(null);
+                        setPostFotoUrl(null);
+                      }}
+                      aria-label="Quitar foto"
+                      style={{ position: "absolute", top: -8, right: -8, background: C.card, border: "none", borderRadius: "50%", width: 26, height: 26, color: C.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <Icon.X />
+                    </button>
+                  </div>
+                )}
+                {publicarError && (
+                  <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12, margin: "8px 0 0" }}>{publicarError}</p>
+                )}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
+                  <button
+                    onClick={() => postFileRef.current?.click()}
+                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 8, margin: -8, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    aria-label="Agregar foto"
+                  >
+                    <Icon.Gallery />
+                  </button>
+                  <button
+                    onClick={crearPublicacion}
+                    disabled={publicando || (!postTexto.trim() && !postFoto)}
+                    style={{
+                      background: publicando || (!postTexto.trim() && !postFoto) ? C.cardLine : C.green,
+                      color: publicando || (!postTexto.trim() && !postFoto) ? C.inkSoft : "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "9px 20px",
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: publicando || (!postTexto.trim() && !postFoto) ? "default" : "pointer",
+                    }}
+                  >
+                    {publicando ? "Publicando..." : "Publicar"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {cargandoFeed ? (
+              <p style={{ textAlign: "center", padding: "40px 0", fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>
+                Cargando publicaciones...
+              </p>
+            ) : feed.length === 0 ? (
+              <p style={{ textAlign: "center", padding: "40px 20px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft }}>
+                Todavía no hay publicaciones. ¡Sé la primera persona en compartir algo! 🌱
+              </p>
+            ) : (
+              feed.map((post) => {
+                const leDiLike = misLikes.includes(post.id);
+                const fecha = new Date(post.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+                return (
+                  <div key={post.id} style={{ background: C.card, borderRadius: 18, padding: "14px 16px", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, color: C.ink, margin: 0 }}>
+                        {post.perfiles?.nombre || "Vecino"}
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: 0 }}>{fecha}</p>
+                    </div>
+                    {post.texto && (
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: "8px 0 0", lineHeight: 1.45 }}>
+                        {post.texto}
+                      </p>
+                    )}
+                    {post.imagen_url && (
+                      <img
+                        src={post.imagen_url}
+                        alt=""
+                        style={{ width: "100%", maxHeight: 260, objectFit: "cover", borderRadius: 14, marginTop: 10 }}
+                      />
+                    )}
+                    <button
+                      onClick={() => toggleLike(post.id)}
+                      style={{
+                        marginTop: 10,
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 4px",
+                        marginLeft: -4,
+                      }}
+                    >
+                      <Icon.Heart style={{ color: leDiLike ? C.red : C.cardLine, width: 18, height: 18 }} />
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 600, color: C.inkSoft }}>
+                        {post.likesCount || 0}
+                      </span>
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* ---------------- TIENDA (reservar mantenimiento) ---------------- */}
+        {screen === "tienda" && (
+          <div style={{ padding: "18px 16px 10px", flex: 1, overflowY: "auto" }}>
+            <h1
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontWeight: 800,
+                fontSize: 24,
+                letterSpacing: "-0.01em",
+                color: C.ink,
+                margin: "0 0 4px",
+              }}
+            >
+              Tienda
+            </h1>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: "0 0 16px" }}>
+              Reserva una visita de mantenimiento para tus plantas.
+            </p>
+
+            {pagoStatus === "exito" && (
+              <div style={{ background: "rgba(63,93,62,0.12)", borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Icon.Check style={{ color: C.green, flexShrink: 0, marginTop: 2 }} />
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.green, margin: 0, lineHeight: 1.4 }}>
+                  Listo. Si pagaste con tarjeta, tu visita ya quedó confirmada. Si elegiste OXXO, se confirma en cuanto pagues el voucher.
+                </p>
+              </div>
+            )}
+            {pagoStatus === "cancelado" && (
+              <div style={{ background: "rgba(156,59,46,0.1)", borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <Icon.Warning style={{ color: C.red, flexShrink: 0, marginTop: 2 }} />
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.red, margin: 0, lineHeight: 1.4 }}>
+                  Se canceló el pago. Tu reservación quedó guardada — puedes intentar pagar de nuevo cuando quieras.
+                </p>
+              </div>
+            )}
+
+            <div style={{ background: C.card, borderRadius: 20, padding: "18px 16px", marginBottom: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: C.ink, margin: 0 }}>
+                  Mantenimiento de plantas
+                </p>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: C.green, margin: 0 }}>
+                  ${(PRECIO_MANTENIMIENTO_CENTAVOS / 100).toFixed(0)} MXN
+                </p>
+              </div>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.4 }}>
+                Revisión, riego, poda ligera y consejos personalizados para tus plantas, en tu casa.
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <input
+                  value={reservaNombre}
+                  onChange={(e) => setReservaNombre(e.target.value)}
+                  placeholder="Tu nombre"
+                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                />
+                <input
+                  value={reservaTelefono}
+                  onChange={(e) => setReservaTelefono(e.target.value)}
+                  placeholder="Teléfono (WhatsApp)"
+                  type="tel"
+                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                />
+                <input
+                  value={reservaCorreo}
+                  onChange={(e) => setReservaCorreo(e.target.value)}
+                  placeholder="Correo (para tu recibo de pago)"
+                  type="email"
+                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={reservaFecha}
+                    onChange={(e) => setReservaFecha(e.target.value)}
+                    type="date"
+                    min={new Date().toISOString().slice(0, 10)}
+                    style={{ flex: 1, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
+                  />
+                  <select
+                    value={reservaHora}
+                    onChange={(e) => setReservaHora(e.target.value)}
+                    style={{ flex: 1, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
+                  >
+                    {HORARIOS_DISPONIBLES.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  value={reservaNotas}
+                  onChange={(e) => setReservaNotas(e.target.value)}
+                  placeholder="Notas para la visita (opcional)"
+                  rows={2}
+                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: 10, fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, resize: "none", boxSizing: "border-box", background: C.tileBg }}
+                />
+              </div>
+
+              {reservaError && (
+                <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
+              )}
+
+              <button
+                onClick={reservarYPagar}
+                disabled={reservando}
+                style={{
+                  marginTop: 14,
+                  width: "100%",
+                  padding: "13px 0",
+                  borderRadius: 14,
+                  border: "none",
+                  background: reservando ? C.cardLine : C.green,
+                  color: reservando ? C.inkSoft : "#fff",
+                  fontFamily: "'Inter', sans-serif",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: reservando ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <Icon.Card style={{ width: 15, height: 15 }} />
+                {reservando ? "Preparando pago..." : `Reservar y pagar $${(PRECIO_MANTENIMIENTO_CENTAVOS / 100).toFixed(0)}`}
+              </button>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
+                Puedes pagar con tarjeta o en efectivo en OXXO.
+              </p>
+            </div>
+
+            <Tag>Tus reservaciones</Tag>
+            <div style={{ marginTop: 10 }}>
+              {cargandoReservaciones ? (
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, textAlign: "center", padding: "16px 0" }}>
+                  Cargando...
+                </p>
+              ) : misReservaciones.length === 0 ? (
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, textAlign: "center", padding: "16px 0" }}>
+                  Aún no tienes reservaciones.
+                </p>
+              ) : (
+                misReservaciones.map((r) => {
+                  const estadoInfo = {
+                    pagado: { label: "Pagado", color: C.green },
+                    pendiente_pago: { label: "Pendiente de pago", color: C.amber },
+                    cancelado: { label: "Cancelado", color: C.red },
+                  }[r.estado] || { label: r.estado, color: C.inkSoft };
+                  return (
+                    <div key={r.id} style={{ background: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, color: C.ink, margin: 0 }}>
+                          {new Date(r.fecha + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })} · {r.hora}
+                        </p>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: "2px 0 0" }}>
+                          ${(r.precio_centavos / 100).toFixed(0)} MXN
+                        </p>
+                      </div>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          fontFamily: "'Inter', sans-serif",
+                          fontWeight: 700,
+                          fontSize: 11,
+                          color: estadoInfo.color,
+                          background: `${estadoInfo.color}1F`,
+                          padding: "5px 10px",
+                          borderRadius: 10,
+                        }}
+                      >
+                        {estadoInfo.label}
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

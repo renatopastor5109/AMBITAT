@@ -122,7 +122,7 @@ const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
 // Precio de la visita de mantenimiento (en centavos, como los pide Stripe).
 // Cámbialo aquí si quieres ajustar el precio — no requiere tocar nada más.
-const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
+const PRECIO_MANTENIMIENTO_CENTAVOS = 20000; // $200.00 MXN
 
 const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
 

@@ -122,7 +122,7 @@ const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
 // Precio de la visita de mantenimiento (en centavos, como los pide Stripe).
 // Cámbialo aquí si quieres ajustar el precio — no requiere tocar nada más.
-const PRECIO_MANTENIMIENTO_CENTAVOS = 20000; // $200.00 MXN
+const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
 
 const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
 
@@ -823,6 +823,7 @@ export default function BrotesApp() {
   const [reservaCorreo, setReservaCorreo] = useState("");
   const [reservaFecha, setReservaFecha] = useState("");
   const [reservaHora, setReservaHora] = useState(HORARIOS_DISPONIBLES[0]);
+  const [reservaDireccion, setReservaDireccion] = useState("");
   const [reservaNotas, setReservaNotas] = useState("");
   const [reservando, setReservando] = useState(false);
   const [reservaError, setReservaError] = useState(null);
@@ -843,8 +844,8 @@ export default function BrotesApp() {
 
   async function reservarYPagar() {
     if (!userId) return;
-    if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha) {
-      setReservaError("Completa tu nombre, teléfono, correo y la fecha para continuar.");
+    if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha || !reservaDireccion.trim()) {
+      setReservaError("Completa tu nombre, teléfono, correo, la dirección y la fecha para continuar.");
       return;
     }
     setReservando(true);
@@ -859,6 +860,7 @@ export default function BrotesApp() {
         correo: reservaCorreo.trim(),
         fecha: reservaFecha,
         hora: reservaHora,
+        direccion: reservaDireccion.trim(),
         notas: reservaNotas.trim() || null,
         precio_centavos: PRECIO_MANTENIMIENTO_CENTAVOS,
       })
@@ -884,7 +886,9 @@ export default function BrotesApp() {
     } catch (err) {
       console.error("Error iniciando pago:", err);
       setReservando(false);
-      setReservaError("No pudimos iniciar el pago. Intenta de nuevo.");
+      setReservaError(
+        "No pudimos iniciar el pago" + (err?.message ? `: ${err.message}` : ".") + " Intenta de nuevo."
+      );
     }
   }
 
@@ -2042,6 +2046,12 @@ export default function BrotesApp() {
                   type="email"
                   style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
                 />
+                <input
+                  value={reservaDireccion}
+                  onChange={(e) => setReservaDireccion(e.target.value)}
+                  placeholder="Dirección de la visita (calle, número, colonia)"
+                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                />
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     value={reservaFecha}
@@ -2128,6 +2138,11 @@ export default function BrotesApp() {
                         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: "2px 0 0" }}>
                           ${(r.precio_centavos / 100).toFixed(0)} MXN
                         </p>
+                        {r.direccion && (
+                          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {r.direccion}
+                          </p>
+                        )}
                       </div>
                       <span
                         style={{

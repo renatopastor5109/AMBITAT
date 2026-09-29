@@ -73,6 +73,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ url: session.url });
   } catch (err) {
     console.error("Error creando sesión de pago:", err);
-    return res.status(500).json({ error: "No se pudo iniciar el pago" });
+    // Se manda el mensaje real de Stripe/Supabase para poder diagnosticar
+    // el problema desde la app (sin tener que revisar los logs de Vercel).
+    return res.status(500).json({ error: err?.message || "No se pudo iniciar el pago" });
   }
 }

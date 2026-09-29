@@ -78,6 +78,7 @@ create table if not exists public.reservaciones (
   correo text,
   fecha date not null,
   hora text not null,
+  direccion text,
   notas text,
   precio_centavos integer not null,
   estado text not null default 'pendiente_pago', -- pendiente_pago | pagado | cancelado
@@ -85,6 +86,10 @@ create table if not exists public.reservaciones (
   stripe_session_id text,
   created_at timestamptz default now()
 );
+
+-- Si ya habías corrido este archivo antes de que existiera la columna
+-- "direccion", esta línea la agrega sin tronar nada.
+alter table public.reservaciones add column if not exists direccion text;
 
 alter table public.reservaciones enable row level security;
 

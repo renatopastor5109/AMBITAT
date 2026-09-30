@@ -89,8 +89,8 @@ const FONTS_IMPORT = `
     grid-template-columns: repeat(3, 1fr);
   }
   .brotes-tip-img {
-    width: 120px !important;
-    height: 120px !important;
+    width: 160px !important;
+    height: 160px !important;
   }
 }
 `;
@@ -1599,8 +1599,8 @@ export default function BrotesApp() {
                     <div
                       onClick={() => setOrdenJardin("salud")}
                       style={{
-                        flexShrink: 0,
-                        width: 220,
+                        flex: "1 1 0",
+                        minWidth: 210,
                         background: C.card,
                         borderRadius: 22,
                         padding: "18px 18px",
@@ -1675,8 +1675,8 @@ export default function BrotesApp() {
                     <button
                       onClick={() => openTip(primerPendiente >= 0 ? primerPendiente : 0)}
                       style={{
-                        flex: "1 1 108px",
-                        minWidth: 108,
+                        flex: "1 1 0",
+                        minWidth: 120,
                         position: "relative",
                         background: C.card,
                         border: "3px solid " + (pendientes > 0 ? C.wood : C.cardLine),
@@ -1717,7 +1717,7 @@ export default function BrotesApp() {
                         src={stage.img}
                         alt={stage.label}
                         className="brotes-tip-img"
-                        style={{ width: 74, height: 74, objectFit: "contain" }}
+                        style={{ width: 100, height: 100, objectFit: "contain" }}
                       />
                     </button>
                   );

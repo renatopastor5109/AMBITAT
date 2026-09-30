@@ -842,6 +842,36 @@ export default function BrotesApp() {
   const [reservaDireccion, setReservaDireccion] = useState("");
   const [reservaNotas, setReservaNotas] = useState("");
   const [reservaFechaError, setReservaFechaError] = useState(null);
+  const [horasOcupadas, setHorasOcupadas] = useState([]);
+
+  // Cada que se elige una fecha, pregunta qué horas ya están tomadas para no
+  // ofrecerlas (y si la hora elegida ya no está libre, cambia a la primera libre).
+  useEffect(() => {
+    if (!reservaFecha) {
+      setHorasOcupadas([]);
+      return;
+    }
+    let cancelado = false;
+    fetch(`/api/horarios-ocupados?fecha=${reservaFecha}`)
+      .then((r) => (r.ok ? r.json() : { ocupadas: [] }))
+      .then((data) => {
+        if (cancelado) return;
+        const ocupadas = data.ocupadas || [];
+        setHorasOcupadas(ocupadas);
+        setReservaHora((actual) => {
+          if (!ocupadas.includes(actual)) return actual;
+          return HORARIOS_DISPONIBLES.find((h) => !ocupadas.includes(h)) || actual;
+        });
+      })
+      .catch(() => {
+        if (!cancelado) setHorasOcupadas([]);
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [reservaFecha]);
+
+  const diaLleno = !!reservaFecha && HORARIOS_DISPONIBLES.every((h) => horasOcupadas.includes(h));
 
   // El servicio de mantenimiento solo se ofrece sábados y domingos.
   function handleReservaFechaChange(valor) {
@@ -885,6 +915,10 @@ export default function BrotesApp() {
     const diaSemana = new Date(reservaFecha + "T00:00:00").getDay();
     if (diaSemana !== 0 && diaSemana !== 6) {
       setReservaError("La fecha debe ser sábado o domingo.");
+      return;
+    }
+    if (horasOcupadas.includes(reservaHora)) {
+      setReservaError("Ese horario ya está ocupado. Elige otra hora u otro día.");
       return;
     }
     setReservando(true);
@@ -2134,13 +2168,21 @@ export default function BrotesApp() {
                     onChange={(e) => setReservaHora(e.target.value)}
                     style={{ flex: 1, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
                   >
-                    {HORARIOS_DISPONIBLES.map((h) => (
-                      <option key={h} value={h}>{h}</option>
-                    ))}
+                    {HORARIOS_DISPONIBLES.map((h) => {
+                      const ocupada = horasOcupadas.includes(h);
+                      return (
+                        <option key={h} value={h} disabled={ocupada}>
+                          {h}{ocupada ? " (ocupado)" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
-                  {reservaFechaError || "El mantenimiento solo se agenda en sábado o domingo."}
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError || diaLleno ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
+                  {reservaFechaError ||
+                    (diaLleno
+                      ? "Ese día ya está lleno. Elige otro sábado o domingo."
+                      : "El mantenimiento solo se agenda en sábado o domingo.")}
                 </p>
                 <textarea
                   value={reservaNotas}
@@ -2200,6 +2242,7 @@ export default function BrotesApp() {
                     pagado: { label: "Pagado", color: C.green },
                     pendiente_pago: { label: "Pendiente de pago", color: C.amber },
                     cancelado: { label: "Cancelado", color: C.red },
+                    completado: { label: "Completada", color: C.blue },
                   }[r.estado] || { label: r.estado, color: C.inkSoft };
                   return (
                     <div
@@ -2264,6 +2307,7 @@ export default function BrotesApp() {
                 pagado: { label: "Pagado", color: C.green, detalle: "Tu visita quedó confirmada." },
                 pendiente_pago: { label: "Pendiente de pago", color: C.amber, detalle: "Todavía no se ha completado el pago de esta reservación." },
                 cancelado: { label: "Cancelado", color: C.red, detalle: "Esta reservación fue cancelada." },
+                completado: { label: "Completada", color: C.blue, detalle: "La visita ya se realizó. ¡Gracias por confiar en Ámbitat!" },
               }[r.estado] || { label: r.estado, color: C.inkSoft, detalle: "" };
               return (
                 <div

@@ -5,6 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { obtenerHorasOcupadas } from "../../lib/horariosOcupados";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -38,6 +39,14 @@ export default async function handler(req, res) {
     }
     if (reservacion.estado === "pagado") {
       return res.status(400).json({ error: "Esta reservación ya está pagada" });
+    }
+
+    // Revisa otra vez que nadie más haya tomado ese horario mientras la
+    // persona llenaba el formulario.
+    const ocupadas = await obtenerHorasOcupadas(admin, reservacion.fecha, reservacion.id);
+    if (ocupadas.includes(reservacion.hora)) {
+      await admin.from("reservaciones").update({ estado: "cancelado" }).eq("id", reservacion.id);
+      return res.status(409).json({ error: "Ese horario se acaba de ocupar. Elige otra hora." });
     }
 
     const stripe = new Stripe(stripeKey);

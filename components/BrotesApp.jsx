@@ -126,6 +126,16 @@ const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
 
 const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
 
+// Fases de crecimiento que la persona puede indicar antes de escanear, para
+// darle más contexto a la IA (por ejemplo una plántula recién germinada se
+// puede confundir fácilmente con otra si no se avisa que apenas está naciendo).
+const FASES_PLANTA = [
+  { key: "germinando", label: "Germinando" },
+  { key: "brote", label: "Brote pequeño" },
+  { key: "creciendo", label: "Creciendo" },
+  { key: "grande", label: "Ya grande / madura" },
+];
+
 // Viveros y tiendas de plantas en CDMX, repartidos por zona. "mapsUrl" abre
 // el lugar directo en Google Maps usando su place_id — sin necesidad de
 // pedir permisos de ubicación ni configurar una API de mapas en la app.
@@ -594,6 +604,11 @@ const Icon = {
       <path d="M14 4h6v6M20 4l-9 9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  ChevronRight: (p) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" {...p}>
+      <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
   Heart: (p) => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
       <path d="M12 20.5s-7.5-4.6-9.8-9.4C0.8 7.6 2.6 4 6.3 4c2 0 3.6 1.1 4.7 2.8C12.1 5.1 13.7 4 15.7 4c3.7 0 5.5 3.6 4.1 7.1C17.5 15.9 12 20.5 12 20.5z" fill="currentColor" />
@@ -773,6 +788,7 @@ export default function BrotesApp() {
   // capture flow state
   const [captureMode, setCaptureMode] = useState("new"); // 'new' | 'followup'
   const [plantHint, setPlantHint] = useState(""); // nombre que el usuario cree que es, opcional
+  const [plantFase, setPlantFase] = useState(""); // fase de crecimiento que el usuario cree que tiene, opcional
   const [followupPlantId, setFollowupPlantId] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
   const [result, setResult] = useState(null);
@@ -825,9 +841,27 @@ export default function BrotesApp() {
   const [reservaHora, setReservaHora] = useState(HORARIOS_DISPONIBLES[0]);
   const [reservaDireccion, setReservaDireccion] = useState("");
   const [reservaNotas, setReservaNotas] = useState("");
+  const [reservaFechaError, setReservaFechaError] = useState(null);
+
+  // El servicio de mantenimiento solo se ofrece sábados y domingos.
+  function handleReservaFechaChange(valor) {
+    if (!valor) {
+      setReservaFecha("");
+      setReservaFechaError(null);
+      return;
+    }
+    const diaSemana = new Date(valor + "T00:00:00").getDay(); // 0=domingo, 6=sábado
+    if (diaSemana === 0 || diaSemana === 6) {
+      setReservaFecha(valor);
+      setReservaFechaError(null);
+    } else {
+      setReservaFechaError("Solo se puede agendar en sábado o domingo. Elige otra fecha.");
+    }
+  }
   const [reservando, setReservando] = useState(false);
   const [reservaError, setReservaError] = useState(null);
   const [misReservaciones, setMisReservaciones] = useState([]);
+  const [reservaDetalle, setReservaDetalle] = useState(null); // reservación seleccionada para ver su detalle
   const [cargandoReservaciones, setCargandoReservaciones] = useState(true);
   const [pagoStatus, setPagoStatus] = useState(null); // 'exito' | 'cancelado' | null
 
@@ -846,6 +880,11 @@ export default function BrotesApp() {
     if (!userId) return;
     if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha || !reservaDireccion.trim()) {
       setReservaError("Completa tu nombre, teléfono, correo, la dirección y la fecha para continuar.");
+      return;
+    }
+    const diaSemana = new Date(reservaFecha + "T00:00:00").getDay();
+    if (diaSemana !== 0 && diaSemana !== 6) {
+      setReservaError("La fecha debe ser sábado o domingo.");
       return;
     }
     setReservando(true);
@@ -1027,6 +1066,7 @@ export default function BrotesApp() {
     setPhotoFiles([]);
     setPhotoUrls([]);
     setPlantHint("");
+    setPlantFase("");
     setScreen("camera");
   }
 
@@ -1063,7 +1103,7 @@ export default function BrotesApp() {
       const response = await fetch("/api/analizar-planta", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images, nombreSugerido: plantHint }),
+        body: JSON.stringify({ images, nombreSugerido: plantHint, faseSugerida: plantFase }),
       });
       if (!response.ok) throw new Error("Error del servidor");
       const parsed = await response.json();
@@ -1215,6 +1255,35 @@ export default function BrotesApp() {
                   <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "rgba(245,239,221,0.5)", margin: "6px 0 0", lineHeight: 1.35 }}>
                     Si tienes una idea, escríbela — le sirve de referencia a la IA. Si no estás seguro, déjalo en blanco.
                   </p>
+
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 11.5, letterSpacing: "0.04em", textTransform: "uppercase", color: "rgba(245,239,221,0.5)", margin: "14px 0 8px" }}>
+                    ¿En qué fase está? (opcional)
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {FASES_PLANTA.map((f) => {
+                      const activa = plantFase === f.key;
+                      return (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => setPlantFase(activa ? "" : f.key)}
+                          style={{
+                            border: "1px solid " + (activa ? C.gold : "rgba(245,239,221,0.25)"),
+                            background: activa ? C.gold : "rgba(245,239,221,0.08)",
+                            color: activa ? C.dark : C.cream,
+                            borderRadius: 999,
+                            padding: "7px 14px",
+                            fontFamily: "'Inter', sans-serif",
+                            fontWeight: 700,
+                            fontSize: 12.5,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
               {error && <p style={{ color: "#e3a08c", fontSize: 12.5, marginTop: 8, fontFamily: "'Inter', sans-serif" }}>{error}</p>}
@@ -2055,7 +2124,7 @@ export default function BrotesApp() {
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     value={reservaFecha}
-                    onChange={(e) => setReservaFecha(e.target.value)}
+                    onChange={(e) => handleReservaFechaChange(e.target.value)}
                     type="date"
                     min={new Date().toISOString().slice(0, 10)}
                     style={{ flex: 1, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
@@ -2070,6 +2139,9 @@ export default function BrotesApp() {
                     ))}
                   </select>
                 </div>
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
+                  {reservaFechaError || "El mantenimiento solo se agenda en sábado o domingo."}
+                </p>
                 <textarea
                   value={reservaNotas}
                   onChange={(e) => setReservaNotas(e.target.value)}
@@ -2130,7 +2202,13 @@ export default function BrotesApp() {
                     cancelado: { label: "Cancelado", color: C.red },
                   }[r.estado] || { label: r.estado, color: C.inkSoft };
                   return (
-                    <div key={r.id} style={{ background: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div
+                      key={r.id}
+                      onClick={() => setReservaDetalle(r)}
+                      role="button"
+                      tabIndex={0}
+                      style={{ background: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer" }}
+                    >
                       <div style={{ minWidth: 0 }}>
                         <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, color: C.ink, margin: 0 }}>
                           {new Date(r.fecha + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })} · {r.hora}
@@ -2158,11 +2236,110 @@ export default function BrotesApp() {
                       >
                         {estadoInfo.label}
                       </span>
+                      <Icon.ChevronRight style={{ color: C.inkSoft, flexShrink: 0 }} />
                     </div>
                   );
                 })
               )}
             </div>
+          </div>
+        )}
+
+        {reservaDetalle && (
+          <div
+            onClick={() => setReservaDetalle(null)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(20,16,8,0.55)",
+              zIndex: 60,
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+            }}
+          >
+            {(() => {
+              const r = reservaDetalle;
+              const estadoInfo = {
+                pagado: { label: "Pagado", color: C.green, detalle: "Tu visita quedó confirmada." },
+                pendiente_pago: { label: "Pendiente de pago", color: C.amber, detalle: "Todavía no se ha completado el pago de esta reservación." },
+                cancelado: { label: "Cancelado", color: C.red, detalle: "Esta reservación fue cancelada." },
+              }[r.estado] || { label: r.estado, color: C.inkSoft, detalle: "" };
+              return (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ background: C.cream, borderRadius: "24px 24px 0 0", padding: "10px 20px 28px", width: "100%", maxWidth: 480 }}
+                >
+                  <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardLine, margin: "0 auto 16px" }} />
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
+                    <h2 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
+                      Mantenimiento de plantas
+                    </h2>
+                    <button onClick={() => setReservaDetalle(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 6, margin: -6 }}>
+                      <Icon.X style={{ width: 20, height: 20 }} />
+                    </button>
+                  </div>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 700,
+                      fontSize: 11.5,
+                      color: estadoInfo.color,
+                      background: `${estadoInfo.color}1F`,
+                      padding: "5px 10px",
+                      borderRadius: 10,
+                      marginBottom: 14,
+                    }}
+                  >
+                    {estadoInfo.label}
+                  </span>
+                  {estadoInfo.detalle && (
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.4 }}>
+                      {estadoInfo.detalle}
+                    </p>
+                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
+                        Fecha y hora
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>
+                        {new Date(r.fecha + "T00:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })} · {r.hora}
+                      </p>
+                    </div>
+                    {r.direccion && (
+                      <div>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
+                          Dirección
+                        </p>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>{r.direccion}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
+                        Contacto
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>{r.nombre_contacto} · {r.telefono}</p>
+                    </div>
+                    {r.notas && (
+                      <div>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
+                          Notas
+                        </p>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0, lineHeight: 1.4 }}>{r.notas}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
+                        Precio
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>${(r.precio_centavos / 100).toFixed(0)} MXN</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 

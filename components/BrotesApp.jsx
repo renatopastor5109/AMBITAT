@@ -63,6 +63,12 @@ const FONTS_IMPORT = `
 
 /* Tablet y computadora: la app "flota" como una tarjeta centrada en vez de ocupar toda la pantalla */
 @media (min-width: 700px) {
+  /* Fondo verde pino alrededor de la app (solo aquí; en celular no se ve) */
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #405D3E;
+  }
   .brotes-shell {
     max-width: 480px;
     min-height: calc(100vh - 48px);
@@ -70,7 +76,7 @@ const FONTS_IMPORT = `
     margin-bottom: 24px;
     border-radius: 32px;
     overflow: hidden;
-    box-shadow: 0 30px 70px -25px rgba(20, 20, 20, 0.25);
+    box-shadow: 0 30px 70px -25px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -81,6 +87,10 @@ const FONTS_IMPORT = `
   }
   .brotes-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+  .brotes-tip-img {
+    width: 120px !important;
+    height: 120px !important;
   }
 }
 `;
@@ -122,7 +132,7 @@ const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
 // Precio de la visita de mantenimiento (en centavos, como los pide Stripe).
 // Cámbialo aquí si quieres ajustar el precio — no requiere tocar nada más.
-const PRECIO_MANTENIMIENTO_CENTAVOS = 20000; // $200.00 MXN
+const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
 
 const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
 
@@ -1665,8 +1675,8 @@ export default function BrotesApp() {
                     <button
                       onClick={() => openTip(primerPendiente >= 0 ? primerPendiente : 0)}
                       style={{
-                        flexShrink: 0,
-                        width: 108,
+                        flex: "1 1 108px",
+                        minWidth: 108,
                         position: "relative",
                         background: C.card,
                         border: "3px solid " + (pendientes > 0 ? C.wood : C.cardLine),
@@ -1684,8 +1694,8 @@ export default function BrotesApp() {
                         <span
                           style={{
                             position: "absolute",
-                            top: -8,
-                            right: -8,
+                            top: 8,
+                            right: 8,
                             background: C.red,
                             color: "#fff",
                             borderRadius: "50%",
@@ -1706,6 +1716,7 @@ export default function BrotesApp() {
                       <img
                         src={stage.img}
                         alt={stage.label}
+                        className="brotes-tip-img"
                         style={{ width: 74, height: 74, objectFit: "contain" }}
                       />
                     </button>

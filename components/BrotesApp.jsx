@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { VIVEROS, mapsUrl } from "../lib/viveros";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
@@ -40,15 +41,126 @@ const ESTADO_COLOR = {
 const FONTS_IMPORT = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&display=swap');
 
+.brotes-root {
+  background: #EAC468;
+}
 .brotes-shell {
   width: 100%;
   max-width: 420px;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   margin: 0 auto;
   background: #EAC468;
   position: relative;
+  overflow: hidden;
+}
+/* Solo esta zona se desplaza; la barra de pestañas se queda fija abajo */
+.brotes-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.brotes-scroll-shade {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  pointer-events: none;
+  z-index: 5;
+  background: linear-gradient(to bottom, rgba(110, 69, 34, 0.18), rgba(110, 69, 34, 0));
+  transition: opacity 0.25s ease;
+}
+/* Las tarjetas aparecen suavemente conforme entran a la pantalla al hacer
+   scroll. En navegadores que no lo soportan, simplemente se ven normales. */
+@keyframes brotesReveal {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+/* ---------- Animación de entrada ---------- */
+.brotes-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #EAC468;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.brotes-intro.saliendo {
+  opacity: 0;
+  transform: scale(1.06);
+  pointer-events: none;
+}
+.brotes-intro-planta {
+  position: relative;
+  width: 150px;
+  height: 154px;
+}
+.brotes-intro-planta img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transform-origin: 50% 85%;
+  animation: brotesCrece 0.55s cubic-bezier(.34,1.56,.64,1) forwards,
+             brotesDesvanece 0.25s ease forwards;
+}
+.brotes-intro-planta img:nth-child(1) { animation-delay: 0s, 0.5s; }
+.brotes-intro-planta img:nth-child(2) { animation-delay: 0.45s, 0.95s; }
+.brotes-intro-planta img:nth-child(3) { animation-delay: 0.9s, 99s; }
+.brotes-intro-logo {
+  height: 46px;
+  width: auto;
+  margin-top: 22px;
+  opacity: 0;
+  animation: brotesSube 0.6s ease 1s forwards;
+}
+.brotes-intro-texto {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: #6b6047;
+  margin: 10px 0 0;
+  opacity: 0;
+  animation: brotesSube 0.6s ease 1.2s forwards;
+}
+@keyframes brotesCrece {
+  from { opacity: 0; transform: scale(0.3) translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes brotesDesvanece {
+  to { opacity: 0; }
+}
+@keyframes brotesSube {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brotes-intro-planta img, .brotes-intro-logo, .brotes-intro-texto { animation: none; opacity: 1; }
+  .brotes-intro-planta img:not(:last-child) { opacity: 0; }
+  .brotes-intro { transition: opacity 0.2s ease; }
+  .brotes-intro.saliendo { transform: none; }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .brotes-reveal {
+      animation: brotesReveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
 }
 .brotes-grid {
   display: grid;
@@ -64,14 +176,15 @@ const FONTS_IMPORT = `
 /* Tablet y computadora: la app "flota" como una tarjeta centrada en vez de ocupar toda la pantalla */
 @media (min-width: 700px) {
   /* Fondo verde pino alrededor de la app (solo aquí; en celular no se ve) */
-  html, body {
+  html, body, .brotes-root {
     margin: 0;
     min-height: 100%;
     background: #405D3E;
   }
   .brotes-shell {
     max-width: 480px;
-    min-height: calc(100vh - 48px);
+    height: calc(100vh - 48px);
+    height: calc(100dvh - 48px);
     margin-top: 24px;
     margin-bottom: 24px;
     border-radius: 32px;
@@ -89,8 +202,7 @@ const FONTS_IMPORT = `
     grid-template-columns: repeat(3, 1fr);
   }
   .brotes-tip-img {
-    width: 160px !important;
-    height: 160px !important;
+    max-width: 200px !important;
   }
 }
 `;
@@ -146,21 +258,7 @@ const FASES_PLANTA = [
   { key: "grande", label: "Ya grande / madura" },
 ];
 
-// Viveros y tiendas de plantas en CDMX, repartidos por zona. "mapsUrl" abre
-// el lugar directo en Google Maps usando su place_id — sin necesidad de
-// pedir permisos de ubicación ni configurar una API de mapas en la app.
-const VIVEROS = [
-  { nombre: "Mercado De Plantas", zona: "Coyoacán", direccion: "Calle Melchor Ocampo 4, Del Carmen, Coyoacán", rating: 4.6, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJH3lj_-n_0YUR6OzHY323WJ4" },
-  { nombre: "Vivero del Bosque", zona: "Coyoacán", direccion: "Av. México / Melchor Ocampo 100, Del Carmen, Coyoacán", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJ0WtfBOr_0YUR8RuhOftH6Gg" },
-  { nombre: "Botéo Lomas", zona: "Lomas de Chapultepec", direccion: "Barrilaco 365A, Lomas de Chapultepec, Miguel Hidalgo", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJNRMRKQUB0oURZzNHWuli7Ck" },
-  { nombre: "Sucu Sucu", zona: "Polanco", direccion: "Av. Isaac Newton 178, Polanco V Secc, Miguel Hidalgo", rating: 4.3, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJwybt4Vf50YURTeF5kOTcUDQ" },
-  { nombre: "Botéo Condesa", zona: "Condesa", direccion: "C. Atlixco 13, Colonia Condesa, Cuauhtémoc", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJne5-_1H_0YURmq6XOJ_QdK0" },
-  { nombre: "Vivero 64", zona: "Roma Norte", direccion: "C. de Chiapas 64, Roma Nte., Cuauhtémoc", rating: 4.5, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJvSldLLD_0YURoQNSkUWDtlQ" },
-  { nombre: "Plantería Mary", zona: "Roma Sur", direccion: "Quintana Roo 49A, Roma Sur, Cuauhtémoc", rating: 4.4, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJ-1EB3hv_0YURBZaxTktNdhg" },
-  { nombre: "Vinde Garden Center", zona: "Gustavo A. Madero", direccion: "Av. Talismán 45B, Col. Estrella, Gustavo A. Madero", rating: 4.8, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJg5VTlUL50YURJX8Z5q19mhs" },
-  { nombre: "Madreselva Xochimilco", zona: "Xochimilco", direccion: "C. Madreselva, Xaltocan, Xochimilco", rating: 4.7, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJqz07ABYBzoURqZHPq6ZzknY" },
-  { nombre: "Mercado de Plantas Cuemanco", zona: "Xochimilco", direccion: "Av. Canal Nacional 2000, Coapa, Cuemanco, Xochimilco", rating: 4.7, mapsUrl: "https://www.google.com/maps/place/?q=place_id:ChIJsfF52ysCzoURGFvC0x7gPrw" },
-];
+
 
 // Tips generales de cuidado, para los circulitos tipo "Stories" del jardín
 const TIPS = [
@@ -650,6 +748,35 @@ const Icon = {
   ),
 };
 
+// ---------- Animación de entrada: una planta que crece y aparece el logo ----------
+function IntroAnimada() {
+  const [fase, setFase] = useState("visible"); // visible -> saliendo -> fuera
+  useEffect(() => {
+    const t1 = setTimeout(() => setFase("saliendo"), 2000);
+    const t2 = setTimeout(() => setFase("fuera"), 2500);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
+  if (fase === "fuera") return null;
+  return (
+    <div
+      className={"brotes-intro" + (fase === "saliendo" ? " saliendo" : "")}
+      onClick={() => setFase("saliendo")}
+      aria-hidden="true"
+    >
+      <div className="brotes-intro-planta">
+        <img src="/stages/s1.png" alt="" />
+        <img src="/stages/s5.png" alt="" />
+        <img src="/stages/s8.png" alt="" />
+      </div>
+      <img className="brotes-intro-logo" src="/logo.png" alt="" />
+      <p className="brotes-intro-texto">Cuida tus plantas, una foto a la vez.</p>
+    </div>
+  );
+}
+
 // ---------- Nav inferior flotante ----------
 function BottomNav({ screen, setScreen, gardenCount }) {
   const items = [
@@ -686,6 +813,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
     <div
       style={{
         display: "flex",
+        flexShrink: 0,
         alignItems: "stretch",
         margin: "0 16px 16px",
         padding: "8px 4px 6px",
@@ -737,7 +865,16 @@ function BottomNav({ screen, setScreen, gardenCount }) {
 
 export default function BrotesApp() {
   const [screen, setScreen] = useState("jardin");
+  const scrollRef = useRef(null);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setScrolled(false);
+  }, [screen]);
   const [selectedPlant, setSelectedPlant] = useState(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [selectedPlant]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [compareMode, setCompareMode] = useState(false);
@@ -840,6 +977,20 @@ export default function BrotesApp() {
   const galleryRef = useRef(null);
 
   // ---------- Comunidad (viveros cercanos) ----------
+  // Foto de cada vivero: { [placeId]: { foto, autor, autorUrl } }. Se piden
+  // una sola vez, la primera vez que se abre Comunidad.
+  const [fotosViveros, setFotosViveros] = useState({});
+  const fotosPedidas = useRef(false);
+  useEffect(() => {
+    if (screen !== "comunidad" || fotosPedidas.current) return;
+    fotosPedidas.current = true;
+    VIVEROS.forEach((v) => {
+      fetch(`/api/foto-vivero?placeId=${encodeURIComponent(v.placeId)}`)
+        .then((r) => (r.ok ? r.json() : { foto: null }))
+        .catch(() => ({ foto: null }))
+        .then((data) => setFotosViveros((prev) => ({ ...prev, [v.placeId]: data })));
+    });
+  }, [screen]);
   // Por ahora es un directorio estático de viveros/tiendas de plantas en
   // CDMX (datos reales de Google) en vez de un feed de publicaciones.
 
@@ -1260,11 +1411,21 @@ export default function BrotesApp() {
   const isDarkScreen = screen === "camera" || screen === "analyzing" || screen === "result";
 
   return (
-    <div style={{ minHeight: "100vh", background: C.gold, display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
+    <div className="brotes-root" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
+      <IntroAnimada />
       <div className="brotes-shell">
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+        <div className="brotes-scroll-shade" style={{ opacity: scrolled ? 1 : 0 }} />
+        <div
+          className="brotes-scroll"
+          ref={scrollRef}
+          onScroll={(e) => {
+            const arriba = e.currentTarget.scrollTop > 6;
+            if (arriba !== scrolled) setScrolled(arriba);
+          }}
+        >
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -1445,7 +1606,7 @@ export default function BrotesApp() {
 
         {/* ---------------- RESULT ---------------- */}
         {screen === "result" && result && (
-          <div style={{ padding: "20px 16px 6px", flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "20px 16px 6px", flex: 1 }}>
             <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.05em", textTransform: "uppercase", color: C.inkSoft, margin: "0 4px 12px" }}>
               Diario de tus plantas
             </p>
@@ -1600,7 +1761,7 @@ export default function BrotesApp() {
                       onClick={() => setOrdenJardin("salud")}
                       style={{
                         flex: "1 1 0",
-                        minWidth: 210,
+                        minWidth: 196,
                         background: C.card,
                         borderRadius: 22,
                         padding: "18px 18px",
@@ -1676,7 +1837,7 @@ export default function BrotesApp() {
                       onClick={() => openTip(primerPendiente >= 0 ? primerPendiente : 0)}
                       style={{
                         flex: "1 1 0",
-                        minWidth: 120,
+                        minWidth: 0,
                         position: "relative",
                         background: C.card,
                         border: "3px solid " + (pendientes > 0 ? C.wood : C.cardLine),
@@ -1717,14 +1878,14 @@ export default function BrotesApp() {
                         src={stage.img}
                         alt={stage.label}
                         className="brotes-tip-img"
-                        style={{ width: 100, height: 100, objectFit: "contain" }}
+                        style={{ width: "100%", maxWidth: 130, height: "auto", aspectRatio: "1 / 1", objectFit: "contain" }}
                       />
                     </button>
                   );
                 })()}
               </div>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "6px 16px 20px" }}>
+            <div style={{ flex: 1, padding: "6px 16px 20px" }}>
               {loadingGarden ? (
                 <p style={{ textAlign: "center", padding: "60px 0", fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>
                   Cargando tu jardín...
@@ -1796,7 +1957,7 @@ export default function BrotesApp() {
 
                   <div className="brotes-grid">
                   {ordenarJardin(garden, ordenJardin).map((p) => (
-                    <div key={p.id} onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
+                    <div key={p.id} className="brotes-reveal" onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
@@ -1820,7 +1981,7 @@ export default function BrotesApp() {
 
         {/* ---------------- PLANT DETAIL ---------------- */}
         {screen === "jardin" && activePlant && (
-          <div style={{ padding: "18px 16px 10px", flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "18px 16px 10px", flex: 1 }}>
             <button
               onClick={() => {
                 setSelectedPlant(null);
@@ -1935,7 +2096,7 @@ export default function BrotesApp() {
 
         {/* ---------------- BUZÓN DE SUGERENCIAS ---------------- */}
         {screen === "sugerencias" && (
-          <div style={{ padding: "18px 16px 20px", flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "18px 16px 20px", flex: 1 }}>
             <button
               onClick={() => {
                 setScreen("jardin");
@@ -2023,7 +2184,7 @@ export default function BrotesApp() {
 
         {/* ---------------- COMUNIDAD ---------------- */}
         {screen === "comunidad" && (
-          <div style={{ padding: "18px 16px 10px", flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "18px 16px 10px", flex: 1 }}>
             <h1
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -2040,59 +2201,106 @@ export default function BrotesApp() {
               Viveros y tiendas de plantas cerca de ti.
             </p>
 
-            {VIVEROS.map((viv, i) => (
-              <a
-                key={i}
-                href={viv.mapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  background: C.card,
-                  borderRadius: 18,
-                  padding: "14px 16px",
-                  marginBottom: 10,
-                  textDecoration: "none",
-                  cursor: "pointer",
-                }}
-              >
-                <div
+            {VIVEROS.map((viv) => {
+              const datosFoto = fotosViveros[viv.placeId];
+              return (
+                <a
+                  key={viv.placeId}
+                  className="brotes-reveal"
+                  href={mapsUrl(viv.placeId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    background: C.tileBg,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    color: C.green,
+                    display: "block",
+                    background: C.card,
+                    borderRadius: 20,
+                    overflow: "hidden",
+                    marginBottom: 14,
+                    textDecoration: "none",
+                    cursor: "pointer",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 24px -16px rgba(0,0,0,0.25)",
                   }}
                 >
-                  <Icon.MapPin />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14.5, color: C.ink, margin: 0 }}>
-                    {viv.nombre}
-                  </p>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>
-                    {viv.zona} · {viv.direccion}
-                  </p>
-                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.gold, fontWeight: 700, margin: "4px 0 0" }}>
-                    ★ {viv.rating}
-                  </p>
-                </div>
-                <Icon.ExternalLink style={{ color: C.inkSoft, flexShrink: 0 }} />
-              </a>
-            ))}
+                  <div
+                    style={{
+                      position: "relative",
+                      height: 150,
+                      background: "radial-gradient(circle at 50% 35%, #4f7a4c 0%, " + C.greenDark + " 80%)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {datosFoto?.foto ? (
+                      <img
+                        src={datosFoto.foto}
+                        alt={viv.nombre}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <img
+                        src="/stages/s6.png"
+                        alt=""
+                        style={{ width: 84, height: 84, objectFit: "contain", opacity: datosFoto === undefined ? 0.35 : 0.85 }}
+                      />
+                    )}
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: 10,
+                        left: 10,
+                        background: "rgba(245,239,221,0.92)",
+                        color: C.ink,
+                        fontFamily: "'Inter', sans-serif",
+                        fontWeight: 700,
+                        fontSize: 11.5,
+                        padding: "4px 9px",
+                        borderRadius: 999,
+                      }}
+                    >
+                      {viv.zona}
+                    </span>
+                    {datosFoto?.foto && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          right: 8,
+                          bottom: 6,
+                          color: "rgba(255,255,255,0.9)",
+                          fontFamily: "'Inter', sans-serif",
+                          fontSize: 10,
+                          textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+                        }}
+                      >
+                        {datosFoto.autor ? `Foto: ${datosFoto.autor} · ` : ""}Google Maps
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px 14px" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 15, color: C.ink, margin: 0 }}>
+                        {viv.nombre}
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>
+                        {viv.direccion}
+                      </p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.wood, fontWeight: 700, margin: "4px 0 0" }}>
+                        ★ {viv.rating}
+                      </p>
+                    </div>
+                    <Icon.ExternalLink style={{ color: C.inkSoft, flexShrink: 0 }} />
+                  </div>
+                </a>
+              );
+            })}
           </div>
         )}
 
         {/* ---------------- TIENDA (reservar mantenimiento) ---------------- */}
         {screen === "tienda" && (
-          <div style={{ padding: "18px 16px 10px", flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "18px 16px 10px", flex: 1 }}>
             <h1
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -2258,6 +2466,7 @@ export default function BrotesApp() {
                   return (
                     <div
                       key={r.id}
+                      className="brotes-reveal"
                       onClick={() => setReservaDetalle(r)}
                       role="button"
                       tabIndex={0}
@@ -2298,6 +2507,8 @@ export default function BrotesApp() {
             </div>
           </div>
         )}
+
+        </div>
 
         {reservaDetalle && (
           <div

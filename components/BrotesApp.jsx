@@ -44,8 +44,16 @@ const ESTADO_TEXTO = {
 const FONTS_IMPORT = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&display=swap');
 
+html, body {
+  margin: 0;
+  padding: 0;
+}
 .brotes-root {
   background: #EAC468;
+  /* 100vh en iPhone es más alto que lo que se ve (por las barras de Safari);
+     dvh es la altura visible real. */
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 /* En iPhone, un campo con letra menor a 16px hace que la pantalla se
    acerque sola al escribir y se quede así. */
@@ -53,6 +61,24 @@ const FONTS_IMPORT = `
 .brotes-shell textarea,
 .brotes-shell select {
   font-size: 16px !important;
+}
+/* Safari en iPhone le da al campo de fecha un ancho y alto propios que no
+   respetan el diseño; así se comporta como los demás campos. */
+.brotes-shell input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  line-height: 24px;
+  text-align: left;
+}
+.brotes-shell input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+.brotes-shell select {
+  height: 46px;
 }
 .brotes-shell {
   width: 100%;
@@ -328,19 +354,23 @@ function getGardenStage(garden) {
   if (!garden.length) return { img: "/stages/s1.png", label: "Tips de cuidado" };
   const total = garden.length;
   const saludables = garden.filter((p) => p.estado_general === "saludable").length;
+  const regulares = garden.filter((p) => p.estado_general === "regular").length;
   const criticos = garden.filter((p) => p.estado_general === "critico").length;
-  const pctSaludable = saludables / total;
+
+  // Las 3 etapas tristes (calavera, marchita, recuperándose) solo aparecen
+  // cuando hay plantas en estado crítico.
+  if (criticos / total >= 0.5) return GARDEN_STAGES[0];
+  if (criticos / total >= 0.25) return GARDEN_STAGES[1];
+  if (criticos > 0) return GARDEN_STAGES[2];
+
+  // Sin plantas críticas: de germinando a jardín próspero, según la salud
+  // ("necesita atención" cuenta como media planta sana) y la mejor racha.
+  const salud = (saludables + regulares * 0.5) / total;
   const maxRacha = Math.max(0, ...garden.map((p) => p.racha_riego || 0));
   const streakScore = Math.min(maxRacha / 10, 1);
-
-  if (criticos / total >= 0.5) return GARDEN_STAGES[0];
-
-  const score = pctSaludable * 0.6 + streakScore * 0.4;
-  let stage = GARDEN_STAGES[0];
-  for (const s of GARDEN_STAGES) {
-    if (score >= s.min) stage = s;
-  }
-  return stage;
+  const score = salud * 0.6 + streakScore * 0.4;
+  const positivas = GARDEN_STAGES.slice(3);
+  return positivas[Math.min(positivas.length - 1, Math.floor(score * positivas.length))];
 }
 
 function ordenarJardin(plantas, criterio) {
@@ -465,6 +495,8 @@ function PlantCard({ data, imageUrl, footer, compact, nameEdit }) {
                     letterSpacing: "-0.01em",
                     minWidth: 0,
                     overflowWrap: "break-word",
+                    hyphens: "auto",
+                    WebkitHyphens: "auto",
                   }}
                 >
                   {data.nombre_comun}
@@ -1517,7 +1549,7 @@ export default function BrotesApp() {
   const activePlant = garden.find((p) => p.id === selectedPlant);
 
   return (
-    <div className="brotes-root" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
+    <div className="brotes-root" lang="es" style={{ display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
       <IntroAnimada />
       <div className="brotes-shell">
@@ -1534,7 +1566,7 @@ export default function BrotesApp() {
         >
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
+          <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
             <div style={{ padding: "18px 20px 4px" }}>
               <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(245,239,221,0.5)", margin: 0 }}>
                 {captureMode === "followup" ? "Seguimiento de planta" : "Nueva planta"}
@@ -1637,7 +1669,7 @@ export default function BrotesApp() {
 
         {/* ---------------- FOTOS (revisión antes de analizar) ---------------- */}
         {screen === "fotos" && photoUrls.length > 0 && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", background: C.dark, margin: 16, borderRadius: 26, padding: "22px 20px", overflow: "hidden" }}>
+          <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", alignItems: "center", background: C.dark, margin: 16, borderRadius: 26, padding: "22px 20px", overflow: "hidden" }}>
             <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: C.cream, margin: "0 0 4px", textAlign: "center", letterSpacing: "-0.01em" }}>
               Tus fotos ({photoUrls.length}/3)
             </p>

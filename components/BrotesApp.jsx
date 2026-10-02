@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
+import { PRECIO_MANTENIMIENTO_CENTAVOS, HORARIOS_DISPONIBLES } from "../lib/servicio";
+import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto } from "../lib/fechas";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
-  bg: "#EAC468",           // lienzo de fondo dorado (el original)
   card: "#F5EFDD",          // superficie de tarjetas — crema
   cardLine: "#e2d7b8",      // separador sutil entre filas
   ink: "#221C13",           // texto principal
@@ -17,18 +18,13 @@ const C = {
   orange: "#C2703C",        // racha
   dark: "#28402A",          // pantalla de cámara — verde pino oscuro (el original)
   wood: "#8B5A2E",
-  woodDark: "#6E4522",
   tileBg: "#EFE6CC",        // fondo de las tarjetitas de estadística dentro de la tarjeta crema
 
   // alias usados en partes que no se tocaron a fondo, para no romper nada
   pine: "#3F5D3E",
-  pineDark: "#28402A",
   cream: "#F5EFDD",
   creamLine: "#e2d7b8",
-  amberOld: "#D6A23D",
   rust: "#9C3B2E",
-  coral: "#9C3B2E",
-  mossText: "#6b6047",
   gold: "#EAC468",
 };
 
@@ -37,12 +33,26 @@ const ESTADO_COLOR = {
   regular: C.amber,
   critico: C.red,
 };
+// Para TEXTO: el ámbar claro casi no se lee sobre crema, así que se oscurece.
+const AMBAR_TEXTO = "#8a6110";
+const ESTADO_TEXTO = {
+  saludable: C.green,
+  regular: AMBAR_TEXTO,
+  critico: C.red,
+};
 
 const FONTS_IMPORT = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&display=swap');
 
 .brotes-root {
   background: #EAC468;
+}
+/* En iPhone, un campo con letra menor a 16px hace que la pantalla se
+   acerque sola al escribir y se quede así. */
+.brotes-shell input,
+.brotes-shell textarea,
+.brotes-shell select {
+  font-size: 16px !important;
 }
 .brotes-shell {
   width: 100%;
@@ -164,8 +174,17 @@ const FONTS_IMPORT = `
 }
 .brotes-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
+}
+.brotes-grid > * {
+  min-width: 0;
+}
+/* Celulares muy angostos (iPhone SE original): una sola columna */
+@media (max-width: 359px) {
+  .brotes-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .brotes-stats {
   display: grid;
@@ -199,7 +218,7 @@ const FONTS_IMPORT = `
     max-width: 900px;
   }
   .brotes-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .brotes-tip-img {
     max-width: 200px !important;
@@ -216,37 +235,54 @@ function fileToBase64(file) {
   });
 }
 
-// Calcula cuánto falta (o si ya se pasó) para el próximo riego,
-// usando la fecha de la última foto guardada como referencia.
-function getWateringStatus(plant) {
-  if (!plant?.dias_entre_riegos || !plant?.history?.length) return null;
-  const last = plant.history[plant.history.length - 1];
-  let lastDate = null;
-  if (last.dateISO) {
-    lastDate = new Date(last.dateISO);
-  } else if (last.date) {
-    const parts = last.date.split("/"); // formato es-MX: DD/MM/YYYY
-    if (parts.length === 3) lastDate = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+// Achica la foto antes de mandarla: las fotos del celular pesan 3-5 MB y
+// Vercel no acepta más de 4.5 MB por petición. De paso se quitan los datos
+// ocultos de la foto (como la ubicación GPS de tu casa).
+// Si algo falla, se usa la foto original.
+async function comprimirFoto(file, maxLado = 1600, calidad = 0.82) {
+  try {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const escala = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * escala);
+      canvas.height = Math.round(img.naturalHeight * escala);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", calidad));
+      return blob || file;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } catch {
+    return file;
   }
-  if (!lastDate || isNaN(lastDate)) return null;
+}
 
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const daysSince = Math.floor((Date.now() - lastDate.getTime()) / msPerDay);
-  const remaining = plant.dias_entre_riegos - daysSince;
+// Token de la sesión actual, para que el servidor sepa quién hace la petición.
+async function tokenSesion() {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.access_token || null;
+}
 
-  if (remaining <= 0) return { label: daysSince === plant.dias_entre_riegos ? "Riega hoy" : "Necesita agua", urgent: true, remaining };
-  if (remaining === 1) return { label: "Riega mañana", urgent: false, remaining };
-  return { label: `Riega en ${remaining} días`, urgent: false, remaining };
+// Calcula cuánto falta (o si ya se pasó) para el próximo riego, contando
+// días de calendario en hora de CDMX desde la última foto guardada.
+function getWateringStatus(plant) {
+  const remaining = diasParaRiego(plant?.dias_entre_riegos, plant?.history);
+  if (remaining === null) return null;
+  if (remaining < 0) return { label: "Necesita agua", urgent: true, late: true, remaining };
+  if (remaining === 0) return { label: "Riega hoy", urgent: true, late: false, remaining };
+  if (remaining === 1) return { label: "Riega mañana", urgent: false, late: false, remaining };
+  return { label: `Riega en ${remaining} días`, urgent: false, late: false, remaining };
 }
 
 // Orden de prioridad para ordenar por estado de salud: lo que necesita atención primero
 const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
-// Precio de la visita de mantenimiento (en centavos, como los pide Stripe).
-// Cámbialo aquí si quieres ajustar el precio — no requiere tocar nada más.
-const PRECIO_MANTENIMIENTO_CENTAVOS = 35000; // $350.00 MXN
-
-const HORARIOS_DISPONIBLES = ["9:00 am", "11:00 am", "1:00 pm", "3:00 pm", "5:00 pm"];
+// El precio y los horarios del mantenimiento viven en lib/servicio.js
+// (los usa también el servidor, que es quien cobra).
 
 // Fases de crecimiento que la persona puede indicar antes de escanear, para
 // darle más contexto a la IA (por ejemplo una plántula recién germinada se
@@ -349,26 +385,10 @@ function Tag({ children, color }) {
   );
 }
 
-// ---------- Insignia de madera con el nombre de la app ----------
-function WordmarkBadge() {
-  return (
-    <img
-      src="/logo.png"
-      alt="Ámbitat"
-      style={{
-        alignSelf: "center",
-        width: "78%",
-        maxWidth: 260,
-        height: "auto",
-        display: "block",
-      }}
-    />
-  );
-}
-
 // ---------- Tarjeta de planta: estilo "widget" (tarjeta blanca, íconos, jerarquía tipo Salud/Clima) ----------
-function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit }) {
+function PlantCard({ data, imageUrl, footer, compact, nameEdit }) {
   const estadoColor = ESTADO_COLOR[data.estado_general] || C.amber;
+  const estadoTexto = ESTADO_TEXTO[data.estado_general] || AMBAR_TEXTO;
   const estadoLabel = (ESTADO_STYLES[data.estado_general] || ESTADO_STYLES.regular).label;
   const watering = getWateringStatus(data);
   const hasRacha = !compact && data.racha_riego >= 2;
@@ -398,7 +418,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
               }}
             />
           )}
-          <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ minWidth: 0, flex: 1, paddingRight: compact ? 8 : 0 }}>
             {nameEdit && nameEdit.isEditing ? (
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input
@@ -443,6 +463,8 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
                     margin: 0,
                     lineHeight: 1.15,
                     letterSpacing: "-0.01em",
+                    minWidth: 0,
+                    overflowWrap: "break-word",
                   }}
                 >
                   {data.nombre_comun}
@@ -465,7 +487,7 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6 }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: estadoColor, flexShrink: 0 }} />
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: compact ? 11.5 : 12.5, fontWeight: 700, color: estadoColor }}>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: compact ? 11.5 : 12.5, fontWeight: 700, color: estadoTexto }}>
                 {estadoLabel}
               </span>
             </div>
@@ -561,27 +583,6 @@ function PlantCard({ data, imageUrl, onSave, saved, footer, compact, nameEdit })
               </div>
             )}
 
-            {onSave && (
-              <button
-                onClick={onSave}
-                disabled={saved}
-                style={{
-                  marginTop: 22,
-                  width: "100%",
-                  padding: "13px 0",
-                  borderRadius: 14,
-                  border: "none",
-                  background: saved ? C.tileBg : C.green,
-                  color: saved ? C.inkSoft : "#fff",
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: saved ? "default" : "pointer",
-                }}
-              >
-                {saved ? "Guardado ✓" : "Guardar"}
-              </button>
-            )}
             {footer}
           </>
         )}
@@ -692,14 +693,6 @@ const Icon = {
       <path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z" fill="currentColor" />
     </svg>
   ),
-  Users: (p) => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
-      <circle cx="9" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="17" cy="8.5" r="2.6" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M15.5 14.2c2.6.4 4.5 2.6 4.5 5.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  ),
   MapPin: (p) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
       <path d="M12 21s-7-6.3-7-11.5A7 7 0 0119 9.5C19 14.7 12 21 12 21z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
@@ -717,27 +710,11 @@ const Icon = {
       <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
-  Heart: (p) => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M12 20.5s-7.5-4.6-9.8-9.4C0.8 7.6 2.6 4 6.3 4c2 0 3.6 1.1 4.7 2.8C12.1 5.1 13.7 4 15.7 4c3.7 0 5.5 3.6 4.1 7.1C17.5 15.9 12 20.5 12 20.5z" fill="currentColor" />
-    </svg>
-  ),
   Cart: (p) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" {...p}>
       <path d="M3 4h2l2.2 11.2a2 2 0 002 1.8h7.6a2 2 0 002-1.6L20 8H6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx="10" cy="20" r="1.4" fill="currentColor" />
       <circle cx="17" cy="20" r="1.4" fill="currentColor" />
-    </svg>
-  ),
-  Plus: (p) => (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" {...p}>
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" />
-    </svg>
-  ),
-  Calendar: (p) => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
-      <rect x="3.5" y="5" width="17" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
   Card: (p) => (
@@ -841,7 +818,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
             border: "none",
             padding: "7px 0",
             cursor: "pointer",
-            color: item.active ? "#fff" : "#B5A683",
+            color: item.active ? "#fff" : "#7d7258",
             transition: "background 0.2s ease, color 0.2s ease",
           }}
         >
@@ -851,7 +828,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
               fontFamily: "'Inter', sans-serif",
               fontWeight: 600,
               fontSize: 11,
-              color: item.active ? "#fff" : "#B5A683",
+              color: item.active ? "#fff" : "#7d7258",
               whiteSpace: "nowrap",
             }}
           >
@@ -880,12 +857,25 @@ export default function BrotesApp() {
   const [compareMode, setCompareMode] = useState(false);
   const [ordenJardin, setOrdenJardin] = useState("recientes");
   const [activeTip, setActiveTip] = useState(null); // índice del tip abierto, o null
-  const [viewedTips, setViewedTips] = useState([]);
+  const [viewedTips, setViewedTips] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("ambitat-tips-vistos") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
   function openTip(i) {
     setActiveTip(i);
     const id = TIPS[i].id;
-    setViewedTips((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setViewedTips((prev) => {
+      if (prev.includes(id)) return prev;
+      const nuevos = [...prev, id];
+      try {
+        localStorage.setItem("ambitat-tips-vistos", JSON.stringify(nuevos));
+      } catch {}
+      return nuevos;
+    });
   }
   function nextTip() {
     if (activeTip === null) return;
@@ -933,6 +923,10 @@ export default function BrotesApp() {
   }
 
   // capture flow state
+  // Cada análisis lleva un número. Si mientras se analiza la persona se va
+  // a otra pantalla o empieza otro, el resultado viejo se ignora.
+  const analisisIdRef = useRef(0);
+
   const [captureMode, setCaptureMode] = useState("new"); // 'new' | 'followup'
   const [plantHint, setPlantHint] = useState(""); // nombre que el usuario cree que es, opcional
   const [plantFase, setPlantFase] = useState(""); // fase de crecimiento que el usuario cree que tiene, opcional
@@ -941,11 +935,15 @@ export default function BrotesApp() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [isSaved, setIsSaved] = useState(false);
+  const [savedPlantId, setSavedPlantId] = useState(null); // planta guardada del último análisis
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
   const [garden, setGarden] = useState([]);
   const [userId, setUserId] = useState(null);
+  const userIdRef = useRef(null); // siempre el valor actual (las funciones async no se quedan con uno viejo)
+  const [gardenError, setGardenError] = useState(null);
+  const [notifError, setNotifError] = useState(null);
   const [notifStatus, setNotifStatus] = useState("checking"); // checking | unsupported | default | denied | subscribed
   const [sugerenciaTexto, setSugerenciaTexto] = useState("");
   const [sugerenciaEnviando, setSugerenciaEnviando] = useState(false);
@@ -1041,8 +1039,9 @@ export default function BrotesApp() {
       setReservaFechaError(null);
       return;
     }
-    const diaSemana = new Date(valor + "T00:00:00").getDay(); // 0=domingo, 6=sábado
-    if (diaSemana === 0 || diaSemana === 6) {
+    if (diasEntre(diaCDMX(), valor) < 0) {
+      setReservaFechaError("Esa fecha ya pasó. Elige otro sábado o domingo.");
+    } else if (esFinDeSemana(valor)) {
       setReservaFecha(valor);
       setReservaFechaError(null);
     } else {
@@ -1068,13 +1067,15 @@ export default function BrotesApp() {
   }
 
   async function reservarYPagar() {
-    if (!userId) return;
+    if (!userIdRef.current) {
+      setReservaError("No hay conexión con tu cuenta. Recarga la app e intenta de nuevo.");
+      return;
+    }
     if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha || !reservaDireccion.trim()) {
       setReservaError("Completa tu nombre, teléfono, correo, la dirección y la fecha para continuar.");
       return;
     }
-    const diaSemana = new Date(reservaFecha + "T00:00:00").getDay();
-    if (diaSemana !== 0 && diaSemana !== 6) {
+    if (!esFinDeSemana(reservaFecha)) {
       setReservaError("La fecha debe ser sábado o domingo.");
       return;
     }
@@ -1085,46 +1086,41 @@ export default function BrotesApp() {
     setReservando(true);
     setReservaError(null);
 
-    const { data: nuevaReservacion, error } = await supabase
-      .from("reservaciones")
-      .insert({
-        user_id: userId,
-        nombre_contacto: reservaNombre.trim(),
-        telefono: reservaTelefono.trim(),
-        correo: reservaCorreo.trim(),
-        fecha: reservaFecha,
-        hora: reservaHora,
-        direccion: reservaDireccion.trim(),
-        notas: reservaNotas.trim() || null,
-        precio_centavos: PRECIO_MANTENIMIENTO_CENTAVOS,
-      })
-      .select()
-      .single();
-
-    if (error || !nuevaReservacion) {
-      console.error("Error creando reservación:", error);
-      setReservando(false);
-      setReservaError("No pudimos crear tu reservación. Intenta de nuevo.");
-      return;
-    }
-
     try {
-      const response = await fetch("/api/crear-sesion-pago", {
+      // El servidor guarda la reservación, pone el precio y crea el cobro.
+      const token = await tokenSesion();
+      const response = await fetch("/api/reservar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservacionId: nuevaReservacion.id }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          nombre: reservaNombre,
+          telefono: reservaTelefono,
+          correo: reservaCorreo,
+          fecha: reservaFecha,
+          hora: reservaHora,
+          direccion: reservaDireccion,
+          notas: reservaNotas,
+        }),
       });
-      const data = await response.json();
-      if (!response.ok || !data.url) throw new Error(data.error || "Error al iniciar el pago");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) throw new Error(data.error || "No pudimos iniciar el pago.");
       window.location.href = data.url; // redirige a Stripe Checkout (tarjeta u OXXO)
     } catch (err) {
-      console.error("Error iniciando pago:", err);
+      console.error("Error al reservar:", err);
       setReservando(false);
-      setReservaError(
-        "No pudimos iniciar el pago" + (err?.message ? `: ${err.message}` : ".") + " Intenta de nuevo."
-      );
+      setReservaError(err?.message || "No pudimos iniciar el pago. Intenta de nuevo.");
     }
   }
+
+  // Si la persona regresa de Stripe con el botón "atrás", el navegador puede
+  // mostrar la página como estaba (con el botón en "cargando"). Se reinicia.
+  useEffect(() => {
+    function alVolver(e) {
+      if (e.persisted) setReservando(false);
+    }
+    window.addEventListener("pageshow", alVolver);
+    return () => window.removeEventListener("pageshow", alVolver);
+  }, []);
 
   function rowToPlant(row) {
     return {
@@ -1151,30 +1147,46 @@ export default function BrotesApp() {
       .select("*")
       .eq("user_id", uid)
       .order("created_at", { ascending: true });
-    if (!error && data) setGarden(data.map(rowToPlant));
+    if (error) {
+      console.error("Error cargando jardín:", error);
+      setGardenError("No pudimos cargar tu jardín. Revisa tu conexión.");
+      return;
+    }
+    setGardenError(null);
+    setGarden((data || []).map(rowToPlant));
+  }
+
+  async function reintentarCarga() {
+    setGardenError(null);
+    setLoadingGarden(true);
+    await initAuth();
+  }
+
+  async function initAuth() {
+    const { data: { session } } = await supabase.auth.getSession();
+    let activeSession = session;
+    if (!activeSession) {
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) {
+        console.error("Error de sesión anónima:", error);
+        setGardenError("No pudimos conectarnos. Revisa tu conexión e intenta de nuevo.");
+        setLoadingGarden(false);
+        setCargandoReservaciones(false);
+        return;
+      }
+      activeSession = data.session;
+    }
+    if (activeSession) {
+      const uid = activeSession.user.id;
+      userIdRef.current = uid;
+      setUserId(uid);
+      await loadGarden(uid);
+      cargarReservaciones(uid);
+    }
+    setLoadingGarden(false);
   }
 
   useEffect(() => {
-    async function initAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
-      let activeSession = session;
-      if (!activeSession) {
-        const { data, error } = await supabase.auth.signInAnonymously();
-        if (error) {
-          console.error("Error de sesión anónima:", error);
-          setLoadingGarden(false);
-          return;
-        }
-        activeSession = data.session;
-      }
-      if (activeSession) {
-        const uid = activeSession.user.id;
-        setUserId(uid);
-        await loadGarden(uid);
-        cargarReservaciones(uid);
-      }
-      setLoadingGarden(false);
-    }
     initAuth();
 
     // Si venimos de regreso de Stripe (?pago=exito / ?pago=cancelado), lo mostramos
@@ -1220,32 +1232,38 @@ export default function BrotesApp() {
   }
 
   async function enableNotifications() {
-    if (!userId) return;
+    if (!userIdRef.current) return;
+    setNotifError(null);
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       setNotifStatus("unsupported");
+      return;
+    }
+    const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!vapid) {
+      console.error("Falta NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+      setNotifError("Los recordatorios todavía no están disponibles.");
       return;
     }
     try {
       const reg = await navigator.serviceWorker.register("/sw.js");
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
+      if (permission === "denied") {
         setNotifStatus("denied");
         return;
       }
+      if (permission !== "granted") return; // cerró el aviso sin decidir: puede intentarlo otra vez
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+        applicationServerKey: urlBase64ToUint8Array(vapid),
       });
       const { error } = await supabase
         .from("push_subscriptions")
-        .upsert({ user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON() }, { onConflict: "endpoint" });
-      if (error) {
-        console.error("Error guardando suscripción:", error);
-        return;
-      }
+        .upsert({ user_id: userIdRef.current, endpoint: sub.endpoint, subscription: sub.toJSON() }, { onConflict: "endpoint" });
+      if (error) throw error;
       setNotifStatus("subscribed");
     } catch (err) {
       console.error("Error activando notificaciones:", err);
+      setNotifError("No pudimos activar los recordatorios. Intenta de nuevo.");
     }
   }
 
@@ -1256,84 +1274,117 @@ export default function BrotesApp() {
     setResult(null);
     setImageUrl(null);
     setIsSaved(false);
+    setSavedPlantId(null);
     setIsSaving(false);
     setSaveError(null);
+    photoUrls.forEach((u) => URL.revokeObjectURL(u)); // libera memoria de las vistas previas
     setPhotoFiles([]);
     setPhotoUrls([]);
     setPlantHint("");
     setPlantFase("");
+    analisisIdRef.current++; // si había un análisis en curso, se ignora su resultado
     setScreen("camera");
   }
 
   function handleFile(e) {
     const file = e.target.files?.[0];
     e.target.value = ""; // para poder volver a elegir el mismo archivo si hace falta
-    if (!file) return;
+    if (!file || photoFiles.length >= 3) return;
     setError(null);
-    setPhotoFiles((prev) => [...prev, file].slice(0, 3));
-    setPhotoUrls((prev) => [...prev, URL.createObjectURL(file)].slice(0, 3));
+    setPhotoFiles((prev) => [...prev, file]);
+    setPhotoUrls((prev) => [...prev, URL.createObjectURL(file)]);
     setScreen("fotos");
   }
 
   function removePhoto(i) {
+    const quedan = photoFiles.length - 1;
+    if (photoUrls[i]) URL.revokeObjectURL(photoUrls[i]);
     setPhotoFiles((prev) => prev.filter((_, idx) => idx !== i));
     setPhotoUrls((prev) => prev.filter((_, idx) => idx !== i));
+    if (quedan <= 0) setScreen("camera"); // sin fotos, regresa a la cámara en vez de quedar en blanco
   }
 
   function confirmPhotos() {
     if (photoFiles.length === 0) return;
     const mainUrl = photoUrls[0];
-    setCapturedFile(photoFiles[0]);
     setImageUrl(mainUrl);
     setScreen("analyzing");
     analyzePhoto(photoFiles, mainUrl);
   }
 
   async function analyzePhoto(files, url) {
+    const miId = ++analisisIdRef.current;
+    const sigueVigente = () => analisisIdRef.current === miId;
+    // Se guardan ahora: si cambian mientras se analiza, el guardado usa estos.
+    const destino = { modo: captureMode, plantaId: followupPlantId };
     setError(null);
     try {
+      const comprimidas = await Promise.all(files.map((f) => comprimirFoto(f)));
       const images = await Promise.all(
-        files.map(async (f) => ({ base64: await fileToBase64(f), mediaType: f.type || "image/jpeg" }))
+        comprimidas.map(async (f) => ({ base64: await fileToBase64(f), mediaType: f.type || "image/jpeg" }))
       );
+      const token = await tokenSesion();
       const response = await fetch("/api/analizar-planta", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ images, nombreSugerido: plantHint, faseSugerida: plantFase }),
       });
-      if (!response.ok) throw new Error("Error del servidor");
-      const parsed = await response.json();
+      const parsed = await response.json().catch(() => ({}));
+      if (!sigueVigente()) return;
+      if (!response.ok) {
+        const err = new Error(parsed.error || "Error del servidor");
+        err.status = response.status;
+        throw err;
+      }
+      setCapturedFile(comprimidas[0]); // para "Reintentar guardado"
       setResult(parsed);
       setScreen("result");
-      // Se guarda solo, sin que la persona tenga que tocar nada — antes era
-      // un paso manual y mucha gente se quedaba sin guardar su planta.
-      saveAnalysis(parsed, url, files[0]);
+      // Se guarda solo, sin que la persona tenga que tocar nada.
+      saveAnalysis(parsed, url, comprimidas[0], destino, sigueVigente);
     } catch (err) {
       console.error(err);
-      setError("No pudimos analizar la foto. Intenta con otra imagen más clara.");
+      if (!sigueVigente()) return;
+      setError(
+        err.status === 429 || err.status === 401
+          ? err.message
+          : "No pudimos analizar la foto. Revisa tu conexión o intenta con otra imagen más clara."
+      );
       setScreen("camera");
     }
   }
 
-  async function saveAnalysis(resultData, imgUrl, file) {
-    if (!resultData || !userId) return;
+  async function saveAnalysis(resultData, imgUrl, file, destino, sigueVigente = () => true) {
+    const uid = userIdRef.current;
+    if (!resultData) return;
+    if (!uid) {
+      setSaveError("No pudimos guardar tu planta porque no hay conexión con tu cuenta. Recarga la app.");
+      return;
+    }
+    const { modo, plantaId } = destino || { modo: captureMode, plantaId: followupPlantId };
     setSaveError(null);
     setIsSaving(true);
 
     let publicUrl = imgUrl;
     if (file) {
-      const path = `${userId}/${Date.now()}-${file.name}`;
-      const { error: uploadError } = await supabase.storage.from("plant-photos").upload(path, file);
+      // Nombre simple: los acentos o símbolos del nombre original pueden
+      // hacer que Supabase rechace el archivo.
+      const path = `${uid}/${Date.now()}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from("plant-photos")
+        .upload(path, file, { contentType: file.type || "image/jpeg" });
       if (!uploadError) {
         const { data } = supabase.storage.from("plant-photos").getPublicUrl(path);
         publicUrl = data.publicUrl;
       } else {
         console.error("Error subiendo foto:", uploadError);
+        if (!sigueVigente()) return;
         setIsSaving(false);
-        setSaveError("No pudimos guardar la foto (revisa que exista el bucket 'plant-photos' en Supabase, marcado como público).");
+        setSaveError("No pudimos guardar la foto. Revisa tu conexión e intenta de nuevo.");
         return;
       }
     }
 
+    let nuevoIdGuardado = null;
     const historyEntry = {
       date: new Date().toLocaleDateString("es-MX"),
       dateISO: new Date().toISOString(),
@@ -1341,13 +1392,18 @@ export default function BrotesApp() {
       estado_general: resultData.estado_general,
     };
 
-    if (captureMode === "followup" && followupPlantId) {
+    if (modo === "followup" && plantaId) {
+      const followupPlantId = plantaId;
       const plant = garden.find((p) => p.id === followupPlantId);
       const newHistory = [...(plant?.history || []), historyEntry];
-      // Racha: si esta foto de seguimiento llega ANTES de que la planta se
-      // pusiera en riesgo por falta de agua, suma un riego a tiempo seguido.
-      const estabaAtrasada = getWateringStatus(plant)?.urgent;
-      const nuevaRacha = estabaAtrasada ? 0 : (plant?.racha_riego || 0) + 1;
+      // Racha de riegos a tiempo:
+      //  - si ya se había pasado el día de riego, se reinicia
+      //  - regar el mismo día que toca sí cuenta como a tiempo
+      //  - varias fotos el mismo día solo cuentan una vez
+      const estado = getWateringStatus(plant);
+      const mismoDia = diasDesdeUltimaFoto(plant?.history) === 0;
+      const rachaActual = plant?.racha_riego || 0;
+      const nuevaRacha = estado?.late ? 0 : mismoDia ? rachaActual : rachaActual + 1;
       const { error } = await supabase
         .from("plantas")
         .update({
@@ -1370,15 +1426,17 @@ export default function BrotesApp() {
         setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...resultData, racha_riego: nuevaRacha, imageUrl: publicUrl, history: newHistory } : p)));
       } else {
         console.error("Error actualizando planta:", error);
+        if (!sigueVigente()) return;
         setIsSaving(false);
         setSaveError("No pudimos actualizar tu planta. Intenta de nuevo.");
         return;
       }
     } else {
       const newId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+      nuevoIdGuardado = newId;
       const { error } = await supabase.from("plantas").insert({
         id: newId,
-        user_id: userId,
+        user_id: uid,
         nombre_comun: resultData.nombre_comun,
         nombre_cientifico: resultData.nombre_cientifico,
         confianza: resultData.confianza,
@@ -1397,18 +1455,66 @@ export default function BrotesApp() {
         setGarden((prev) => [...prev, { ...resultData, id: newId, racha_riego: 0, imageUrl: publicUrl, history: [historyEntry] }]);
       } else {
         console.error("Error guardando planta:", error);
+        if (!sigueVigente()) return;
         setIsSaving(false);
         setSaveError("No pudimos guardar tu planta. Intenta de nuevo.");
         return;
       }
     }
+    if (!sigueVigente()) return; // ya está en otra pantalla: se guardó, pero no se toca lo que ve ahora
     setImageUrl(publicUrl);
+    setSavedPlantId(modo === "followup" && plantaId ? plantaId : nuevoIdGuardado);
     setIsSaving(false);
     setIsSaved(true);
   }
 
+  // ---------- Botón "Atrás" del celular ----------
+  // Sin esto, "Atrás" cerraba la app. Ahora cierra lo que esté abierto encima
+  // (tip, detalle de reserva, planta) o regresa al jardín.
+  const nivelAbierto =
+    activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
+  const historialRef = useRef({ agregado: false, ignorarSiguiente: false });
+  const cerrarRef = useRef(() => {});
+  cerrarRef.current = () => {
+    if (activeTip !== null) setActiveTip(null);
+    else if (reservaDetalle) setReservaDetalle(null);
+    else if (selectedPlant) {
+      setSelectedPlant(null);
+      setEditingName(false);
+      setCompareMode(false);
+      setCompareIndices([]);
+    } else if (screen !== "jardin") {
+      analisisIdRef.current++;
+      setScreen("jardin");
+    }
+  };
+  useEffect(() => {
+    const h = historialRef.current;
+    if (nivelAbierto && !h.agregado) {
+      window.history.pushState({ ambitat: true }, "");
+      h.agregado = true;
+    } else if (!nivelAbierto && h.agregado) {
+      // Se cerró desde la app: quita la entrada que habíamos agregado.
+      h.agregado = false;
+      h.ignorarSiguiente = true;
+      window.history.back();
+    }
+  }, [nivelAbierto]);
+  useEffect(() => {
+    function alRegresar() {
+      const h = historialRef.current;
+      if (h.ignorarSiguiente) {
+        h.ignorarSiguiente = false;
+        return;
+      }
+      h.agregado = false;
+      cerrarRef.current();
+    }
+    window.addEventListener("popstate", alRegresar);
+    return () => window.removeEventListener("popstate", alRegresar);
+  }, []);
+
   const activePlant = garden.find((p) => p.id === selectedPlant);
-  const isDarkScreen = screen === "camera" || screen === "analyzing" || screen === "result";
 
   return (
     <div className="brotes-root" style={{ minHeight: "100vh", display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
@@ -1512,7 +1618,11 @@ export default function BrotesApp() {
               </svg>
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "10px 30px 26px" }}>
-              <button onClick={() => galleryRef.current?.click()} style={{ background: "none", border: "none", color: C.cream, cursor: "pointer" }}>
+              <button
+                onClick={() => galleryRef.current?.click()}
+                aria-label="Elegir foto de la galería"
+                style={{ background: "none", border: "none", color: C.cream, cursor: "pointer", minWidth: 48, minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
                 <Icon.Gallery />
               </button>
               <button
@@ -1520,7 +1630,7 @@ export default function BrotesApp() {
                 style={{ width: 66, height: 66, borderRadius: "50%", border: "4px solid " + C.cream, background: "transparent", cursor: "pointer" }}
                 aria-label="Tomar foto"
               />
-              <div style={{ width: 22 }} />
+              <div style={{ width: 48 }} />
             </div>
           </div>
         )}
@@ -1535,7 +1645,7 @@ export default function BrotesApp() {
               Agregar más ángulos (hoja de cerca, planta completa, tallo) ayuda a identificarla mejor
             </p>
 
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", width: 280 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", width: "100%", maxWidth: 280 }}>
               {photoUrls.map((u, i) => (
                 <div key={i} style={{ position: "relative", width: 84, height: 84 }}>
                   <img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 14 }} />
@@ -1573,7 +1683,7 @@ export default function BrotesApp() {
               )}
             </div>
 
-            <div style={{ width: 280, marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ width: "100%", maxWidth: 280, marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
               <button
                 onClick={confirmPhotos}
                 style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: C.cream, color: C.pine, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
@@ -1611,7 +1721,9 @@ export default function BrotesApp() {
               Diario de tus plantas
             </p>
             <PlantCard
-              data={result}
+              // Ya guardada, se usa la planta del jardín (con su historial), así
+              // se puede mostrar el próximo riego y la racha.
+              data={garden.find((p) => p.id === savedPlantId) || result}
               imageUrl={imageUrl}
               footer={
                 <>
@@ -1633,7 +1745,7 @@ export default function BrotesApp() {
                         {saveError}
                       </p>
                       <button
-                        onClick={() => saveAnalysis(result, imageUrl, capturedFile)}
+                        onClick={() => saveAnalysis(result, imageUrl, capturedFile, { modo: captureMode, plantaId: followupPlantId })}
                         style={{
                           background: C.tileBg,
                           border: "none",
@@ -1738,6 +1850,9 @@ export default function BrotesApp() {
                   </button>
                 </div>
               </div>
+              {notifError && (
+                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.red, margin: "8px 0 0" }}>{notifError}</p>
+              )}
 
               <div style={{ display: "flex", gap: 12, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px", alignItems: "stretch" }}>
                 {garden.length > 0 && (() => {
@@ -1761,7 +1876,7 @@ export default function BrotesApp() {
                       onClick={() => setOrdenJardin("salud")}
                       style={{
                         flex: "1 1 0",
-                        minWidth: 196,
+                        minWidth: 168,
                         background: C.card,
                         borderRadius: 22,
                         padding: "18px 18px",
@@ -1837,7 +1952,7 @@ export default function BrotesApp() {
                       onClick={() => openTip(primerPendiente >= 0 ? primerPendiente : 0)}
                       style={{
                         flex: "1 1 0",
-                        minWidth: 0,
+                        minWidth: 92,
                         position: "relative",
                         background: C.card,
                         border: "3px solid " + (pendientes > 0 ? C.wood : C.cardLine),
@@ -1890,6 +2005,16 @@ export default function BrotesApp() {
                 <p style={{ textAlign: "center", padding: "60px 0", fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>
                   Cargando tu jardín...
                 </p>
+              ) : gardenError ? (
+                <div style={{ textAlign: "center", padding: "50px 20px" }}>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14.5, color: C.red, margin: 0, lineHeight: 1.4 }}>{gardenError}</p>
+                  <button
+                    onClick={reintentarCarga}
+                    style={{ marginTop: 16, background: C.green, color: "#fff", border: "none", borderRadius: 12, padding: "12px 22px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+                  >
+                    Reintentar
+                  </button>
+                </div>
               ) : garden.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "50px 20px" }}>
                   <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, color: C.inkSoft, margin: 0 }}>
@@ -1959,15 +2084,25 @@ export default function BrotesApp() {
                   {ordenarJardin(garden, ordenJardin).map((p) => (
                     <div key={p.id} className="brotes-reveal" onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
                       <button
+                        aria-label={`Borrar ${p.nombre_comun || "planta"}`}
                         onClick={async (e) => {
                           e.stopPropagation();
+                          if (!window.confirm(`¿Borrar "${p.nombre_comun || "esta planta"}" y todo su historial? No se puede deshacer.`)) return;
+                          const antes = garden;
                           setGarden((prev) => prev.filter((x) => x.id !== p.id));
                           const { error } = await supabase.from("plantas").delete().eq("id", p.id);
-                          if (error) console.error("Error borrando planta:", error);
+                          if (error) {
+                            console.error("Error borrando planta:", error);
+                            setGarden(antes); // la regresa si no se pudo borrar
+                            window.alert("No pudimos borrar la planta. Revisa tu conexión e intenta de nuevo.");
+                          }
                         }}
-                        style={{ position: "absolute", top: 6, right: 6, zIndex: 2, background: "rgba(34,28,19,0.55)", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        // Botón de 40px (fácil de tocar) con un círculo chico en la esquina
+                        style={{ position: "absolute", top: -12, right: -12, zIndex: 2, background: "transparent", border: "none", width: 40, height: 40, padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                       >
-                        <Icon.X />
+                        <span style={{ width: 26, height: 26, borderRadius: "50%", background: "#6b6047", border: "2px solid " + C.card, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+                          <Icon.X style={{ width: 13, height: 13 }} />
+                        </span>
                       </button>
                       <PlantCard data={p} imageUrl={p.imageUrl} compact />
                     </div>
@@ -2375,17 +2510,22 @@ export default function BrotesApp() {
                   style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
                 />
                 <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    value={reservaFecha}
-                    onChange={(e) => handleReservaFechaChange(e.target.value)}
-                    type="date"
-                    min={new Date().toISOString().slice(0, 10)}
-                    style={{ flex: 1, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
-                  />
+                  <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Fecha</span>
+                    <input
+                      value={reservaFecha}
+                      onChange={(e) => handleReservaFechaChange(e.target.value)}
+                      type="date"
+                      min={diaCDMX()}
+                      style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
+                    />
+                  </label>
+                  <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Hora</span>
                   <select
                     value={reservaHora}
                     onChange={(e) => setReservaHora(e.target.value)}
-                    style={{ flex: 1, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
+                    style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
                   >
                     {HORARIOS_DISPONIBLES.map((h) => {
                       const ocupada = horasOcupadas.includes(h);
@@ -2396,6 +2536,7 @@ export default function BrotesApp() {
                       );
                     })}
                   </select>
+                  </label>
                 </div>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError || diaLleno ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
                   {reservaFechaError ||
@@ -2459,7 +2600,8 @@ export default function BrotesApp() {
                 misReservaciones.map((r) => {
                   const estadoInfo = {
                     pagado: { label: "Pagado", color: C.green },
-                    pendiente_pago: { label: "Pendiente de pago", color: C.amber },
+                    pendiente_pago: { label: "Pendiente de pago", color: AMBAR_TEXTO },
+                    conflicto: { label: "Te contactaremos", color: C.red },
                     cancelado: { label: "Cancelado", color: C.red },
                     completado: { label: "Completada", color: C.blue },
                   }[r.estado] || { label: r.estado, color: C.inkSoft };
@@ -2527,14 +2669,15 @@ export default function BrotesApp() {
               const r = reservaDetalle;
               const estadoInfo = {
                 pagado: { label: "Pagado", color: C.green, detalle: "Tu visita quedó confirmada." },
-                pendiente_pago: { label: "Pendiente de pago", color: C.amber, detalle: "Todavía no se ha completado el pago de esta reservación." },
+                pendiente_pago: { label: "Pendiente de pago", color: AMBAR_TEXTO, detalle: "Todavía no se ha completado el pago de esta reservación." },
+                conflicto: { label: "Te contactaremos", color: C.red, detalle: "Recibimos tu pago, pero ese horario se ocupó justo antes. Te escribiremos por WhatsApp para cambiar la hora o devolverte tu dinero." },
                 cancelado: { label: "Cancelado", color: C.red, detalle: "Esta reservación fue cancelada." },
                 completado: { label: "Completada", color: C.blue, detalle: "La visita ya se realizó. ¡Gracias por confiar en Ámbitat!" },
               }[r.estado] || { label: r.estado, color: C.inkSoft, detalle: "" };
               return (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  style={{ background: C.cream, borderRadius: "24px 24px 0 0", padding: "10px 20px 28px", width: "100%", maxWidth: 480 }}
+                  style={{ background: C.cream, borderRadius: "24px 24px 0 0", padding: "10px 20px 28px", width: "100%", maxWidth: 480, maxHeight: "85%", overflowY: "auto", boxSizing: "border-box" }}
                 >
                   <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardLine, margin: "0 auto 16px" }} />
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
@@ -2655,6 +2798,7 @@ export default function BrotesApp() {
         <BottomNav
           screen={screen}
           setScreen={(s) => {
+            if (s !== screen) analisisIdRef.current++; // salir de la pantalla cancela el análisis en curso
             setSelectedPlant(null);
             setEditingName(false);
             setCompareMode(false);

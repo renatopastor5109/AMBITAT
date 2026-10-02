@@ -3,6 +3,7 @@
 // guardas en Vercel como ADMIN_PASSWORD (nunca está escrita en el código).
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
+import { diaCDMX, sumarDias, diaSemana } from "../lib/fechas";
 
 const C = {
   bg: "#EAC468",
@@ -22,9 +23,10 @@ const F = "'Inter', sans-serif";
 
 const ESTADOS = {
   pagado: { label: "Pagado", color: C.green },
-  pendiente_pago: { label: "Pendiente de pago", color: C.amber },
+  pendiente_pago: { label: "Pendiente de pago", color: "#8a6110" },
   completado: { label: "Completada", color: C.blue },
   cancelado: { label: "Cancelado", color: C.red },
+  conflicto: { label: "Horario duplicado · reembolsar", color: C.red },
 };
 
 const CLAVE_SESION = "ambitat-admin-pw";
@@ -44,15 +46,7 @@ function guardarSesion(v) {
 }
 
 // "YYYY-MM-DD" de hoy en la hora local del teléfono/computadora
-function hoyISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function sumarDias(iso, n) {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+const hoyISO = () => diaCDMX();
 // "1:00 pm" -> 780, para poder ordenar las citas por hora
 function horaAMinutos(h) {
   const m = /(\d+):(\d+)\s*(am|pm)/i.exec(h || "");
@@ -138,13 +132,14 @@ export default function Admin() {
 
   const resumen = useMemo(() => {
     if (!reservaciones) return null;
-    const dia = new Date(hoy + "T00:00:00").getDay(); // 0 domingo, 6 sábado
+    const dia = diaSemana(hoy); // 0 domingo, 6 sábado
     const finde = dia === 0 ? [hoy] : [sumarDias(hoy, 6 - dia), sumarDias(hoy, 7 - dia)];
     const confirmadas = reservaciones.filter((r) => r.estado === "pagado");
     return {
       esteFinde: confirmadas.filter((r) => finde.includes(r.fecha)).length,
       proximas: confirmadas.filter((r) => r.fecha >= hoy).length,
       pendientes: reservaciones.filter((r) => r.estado === "pendiente_pago" && r.fecha >= hoy).length,
+      conflictos: reservaciones.filter((r) => r.estado === "conflicto").length,
       cobrado: reservaciones
         .filter((r) => r.estado === "pagado" || r.estado === "completado")
         .reduce((s, r) => s + (r.precio_centavos || 0), 0),
@@ -156,7 +151,7 @@ export default function Admin() {
     const lista = reservaciones.filter((r) => {
       if (vista === "proximas") {
         if (r.fecha < hoy) return false;
-        return r.estado === "pagado" || (verPendientes && r.estado === "pendiente_pago");
+        return r.estado === "pagado" || r.estado === "conflicto" || (verPendientes && r.estado === "pendiente_pago");
       }
       return r.estado === "completado" || r.estado === "cancelado" || (r.fecha < hoy && r.estado === "pagado");
     });
@@ -232,6 +227,13 @@ export default function Admin() {
             </div>
 
             {error && <p style={{ color: C.red, fontSize: 13, margin: "0 0 12px" }}>{error}</p>}
+
+            {resumen.conflictos > 0 && (
+              <div style={{ background: C.red, color: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, lineHeight: 1.4 }}>
+                <strong>{resumen.conflictos === 1 ? "1 cita pagó" : `${resumen.conflictos} citas pagaron`} un horario que ya estaba ocupado</strong>{" "}
+                (normalmente un pago en OXXO que llegó tarde). Escríbele al cliente para cambiar el horario o hazle el reembolso desde Stripe.
+              </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
               <Stat valor={resumen.esteFinde} label="Citas este fin de semana" destacado />

@@ -60,7 +60,9 @@ alter table public.correcciones enable row level security;
 
 drop policy if exists "correcciones_insert" on public.correcciones;
 create policy "correcciones_insert" on public.correcciones
-  for insert with check (true);
+  for insert with check (
+    exists (select 1 from public.plantas p where p.id = planta_id and p.user_id = auth.uid())
+  );
 
 -- sin policy de select = nadie desde el cliente puede leer las correcciones de otros usuarios.
 
@@ -68,9 +70,9 @@ create policy "correcciones_insert" on public.correcciones
 -- Los archivos se guardan como "<user_id>/archivo.jpg" — estas políticas
 -- obligan a que cada quien solo pueda subir/editar/borrar dentro de su propia carpeta.
 
+-- El bucket es público: las fotos se ven con su enlace sin necesidad de una
+-- regla de lectura (que además permitiría listar las carpetas de todos).
 drop policy if exists "plant_photos_select_publico" on storage.objects;
-create policy "plant_photos_select_publico" on storage.objects
-  for select using (bucket_id = 'plant-photos');
 
 drop policy if exists "plant_photos_insert_propia_carpeta" on storage.objects;
 create policy "plant_photos_insert_propia_carpeta" on storage.objects

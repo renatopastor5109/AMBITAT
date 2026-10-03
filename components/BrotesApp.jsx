@@ -3012,7 +3012,7 @@ export default function BrotesApp() {
                 <a
                   key={viv.placeId}
                   className="brotes-reveal"
-                  href={mapsUrl(viv.placeId)}
+                  href={mapsUrl(viv)}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{

@@ -2,7 +2,9 @@
 
 App para identificar y cuidar plantas con IA, con recordatorios de riego,
 directorio de viveros en CDMX y reservación de mantenimiento a domicilio.
-Para usarla hay que crear una cuenta con correo y contraseña (Supabase Auth).
+Para usarla hay que crear una cuenta (correo, Google, Apple o Facebook vía
+Supabase Auth). Sin cuenta se puede hacer 1 escaneo de prueba (sesión anónima);
+al crear la cuenta, esa planta se conserva.
 
 ## Cómo está armada
 

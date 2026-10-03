@@ -812,13 +812,44 @@ function errorDeCuenta(err) {
   return "Algo salió mal. Intenta de nuevo.";
 }
 
+// Cuando un enlace de correo ya no sirve, Supabase regresa a la app con el
+// error en la dirección (…/#error=access_denied&error_code=otp_expired…).
+// Se lee una sola vez, se traduce y se limpia la dirección.
+function leerErrorDeEnlace() {
+  if (typeof window === "undefined") return null;
+  const texto = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+  const params = new URLSearchParams(texto || window.location.search.slice(1));
+  const codigo = params.get("error_code") || params.get("error");
+  if (!codigo) return null;
+  window.history.replaceState({}, "", window.location.pathname);
+  if (codigo === "otp_expired" || codigo === "access_denied") {
+    return "Ese enlace ya no sirve: ya se usó o expiró (solo funciona el último correo que te mandamos). Pide uno nuevo abajo.";
+  }
+  return "No pudimos abrir ese enlace. Intenta de nuevo.";
+}
+
 function PantallaCuenta({ estado, plantasGuardadas, correoActual, onRecuperada }) {
-  const [modo, setModo] = useState("registro"); // registro | login | olvide
+  const [errorEnlace] = useState(leerErrorDeEnlace);
+  const [modo, setModo] = useState(errorEnlace ? "login" : "registro"); // registro | login | olvide
   const [correo, setCorreo] = useState("");
   const [password, setPassword] = useState("");
   const [enviando, setEnviando] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(errorEnlace);
   const [aviso, setAviso] = useState(null);
+  // Se muestra "Reenviar correo de confirmación" cuando hace falta confirmar.
+  const [puedeReenviar, setPuedeReenviar] = useState(!!errorEnlace);
+
+  async function reenviarConfirmacion() {
+    const mail = correo.trim().toLowerCase();
+    setError(null);
+    setAviso(null);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setError("Escribe tu correo arriba y vuelve a tocar \"Reenviar\".");
+    setEnviando(true);
+    const { error } = await supabase.auth.resend({ type: "signup", email: mail, options: { emailRedirectTo: origen } });
+    setEnviando(false);
+    if (error) return setError(errorDeCuenta(error));
+    setAviso(`Listo, te mandamos un correo nuevo a ${mail}. Usa el enlace de ese correo (los anteriores ya no sirven).`);
+  }
 
   const origen = typeof window !== "undefined" ? window.location.origin : undefined;
   const esAnonimo = estado === "anonimo";
@@ -860,7 +891,10 @@ function PantallaCuenta({ estado, plantasGuardadas, correoActual, onRecuperada }
       setEnviando(true);
       const { error } = await supabase.auth.signInWithPassword({ email: mail, password });
       setEnviando(false);
-      if (error) return setError(errorDeCuenta(error));
+      if (error) {
+        if ((error.message || "").toLowerCase().includes("not confirmed")) setPuedeReenviar(true);
+        return setError(errorDeCuenta(error));
+      }
       return; // SIGNED_IN abre la app
     }
 
@@ -889,6 +923,7 @@ function PantallaCuenta({ estado, plantasGuardadas, correoActual, onRecuperada }
       return setError(msg);
     }
     if (!data.session) {
+      setPuedeReenviar(true);
       setAviso(`Te mandamos un correo a ${mail}. Toca el enlace para confirmar tu cuenta y listo.`);
     }
   }
@@ -981,6 +1016,16 @@ function PantallaCuenta({ estado, plantasGuardadas, correoActual, onRecuperada }
           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.green, background: "rgba(63,93,62,0.1)", borderRadius: 12, padding: "10px 12px", margin: "12px 0 0", lineHeight: 1.45 }}>
             {aviso}
           </p>
+        )}
+        {puedeReenviar && !pidePassword && !esAnonimo && (
+          <button
+            type="button"
+            onClick={reenviarConfirmacion}
+            disabled={enviando}
+            style={{ marginTop: 10, background: "none", border: "none", padding: "6px 2px", color: C.green, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer", textAlign: "left" }}
+          >
+            Reenviar correo de confirmación
+          </button>
         )}
 
         <button

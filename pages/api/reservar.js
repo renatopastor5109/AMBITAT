@@ -28,7 +28,7 @@ export default async function handler(req, res) {
 
   const usuario = await obtenerUsuario(req);
   if (!usuario) {
-    return res.status(401).json({ error: "Tu sesión expiró. Recarga la app e intenta de nuevo." });
+    return res.status(401).json({ error: "Inicia sesión para continuar." });
   }
 
   // ---------- Validación de datos ----------

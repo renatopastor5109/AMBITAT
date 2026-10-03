@@ -47,7 +47,7 @@ export default async function handler(req, res) {
   // (una sola foto) por si algo todavía manda el formato anterior.
   const usuario = await obtenerUsuario(req);
   if (!usuario) {
-    return res.status(401).json({ error: "Tu sesión expiró. Recarga la app." });
+    return res.status(401).json({ error: "Inicia sesión para continuar." });
   }
 
   const { images, nombreSugerido, faseSugerida } = req.body || {};

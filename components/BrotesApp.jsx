@@ -713,6 +713,12 @@ const Icon = {
       <circle cx="12" cy="17.3" r="1" fill="currentColor" />
     </svg>
   ),
+  User: (p) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" {...p}>
+      <circle cx="12" cy="8" r="3.6" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M4.8 20c.9-3.6 3.8-5.6 7.2-5.6s6.3 2 7.2 5.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  ),
   Info: (p) => (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...p}>
       <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="1.7" />
@@ -782,6 +788,227 @@ function IntroAnimada() {
       </div>
       <img className="brotes-intro-logo" src="/logo.png" alt="" />
       <p className="brotes-intro-texto">Cuida tus plantas, una foto a la vez.</p>
+    </div>
+  );
+}
+
+// ---------- Pantalla de cuenta: crear cuenta, iniciar sesión, contraseña ----------
+// Traduce los errores de Supabase (vienen en inglés) a algo entendible.
+function errorDeCuenta(err) {
+  const m = (err?.message || "").toLowerCase();
+  if (m.includes("invalid login credentials")) return "Correo o contraseña incorrectos.";
+  if (m.includes("already registered") || m.includes("already been registered") || m.includes("already exists"))
+    return "Ya existe una cuenta con ese correo. Inicia sesión.";
+  if (m.includes("email not confirmed")) return "Primero confirma tu correo: revisa tu bandeja de entrada (y spam).";
+  if (m.includes("password") && (m.includes("least") || m.includes("short") || m.includes("weak")))
+    return "La contraseña es muy corta o muy fácil. Usa al menos 8 caracteres.";
+  if (m.includes("same") && m.includes("password")) return "La nueva contraseña debe ser distinta a la anterior.";
+  if (m.includes("rate limit") || m.includes("too many") || m.includes("security purposes"))
+    return "Demasiados intentos seguidos. Espera unos minutos e intenta de nuevo.";
+  if (m.includes("not authorized") || m.includes("sending") || m.includes("smtp"))
+    return "No pudimos enviarte el correo. Intenta más tarde o escríbenos.";
+  if (m.includes("invalid") && m.includes("email")) return "Revisa que el correo esté bien escrito.";
+  if (m.includes("fetch") || m.includes("network")) return "Sin conexión. Revisa tu internet.";
+  return "Algo salió mal. Intenta de nuevo.";
+}
+
+function PantallaCuenta({ estado, plantasGuardadas, correoActual, onRecuperada }) {
+  const [modo, setModo] = useState("registro"); // registro | login | olvide
+  const [correo, setCorreo] = useState("");
+  const [password, setPassword] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+  const [aviso, setAviso] = useState(null);
+
+  const origen = typeof window !== "undefined" ? window.location.origin : undefined;
+  const esAnonimo = estado === "anonimo";
+
+  function cambiarModo(m) {
+    setModo(m);
+    setError(null);
+    setAviso(null);
+  }
+
+  async function enviar(e) {
+    e.preventDefault();
+    setError(null);
+    setAviso(null);
+    const mail = correo.trim().toLowerCase();
+
+    if (estado === "necesita-password" || estado === "recuperacion") {
+      if (password.length < 8) return setError("Usa al menos 8 caracteres.");
+      setEnviando(true);
+      const { error } = await supabase.auth.updateUser({ password, data: { necesita_password: false } });
+      setEnviando(false);
+      if (error) return setError(errorDeCuenta(error));
+      if (estado === "recuperacion") onRecuperada();
+      return; // USER_UPDATED se encarga de abrir la app
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setError("Revisa que el correo esté bien escrito.");
+
+    if (modo === "olvide") {
+      setEnviando(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(mail, { redirectTo: origen });
+      setEnviando(false);
+      if (error) return setError(errorDeCuenta(error));
+      return setAviso(`Si existe una cuenta con ${mail}, te mandamos un enlace para crear una contraseña nueva.`);
+    }
+
+    if (modo === "login") {
+      if (!password) return setError("Escribe tu contraseña.");
+      setEnviando(true);
+      const { error } = await supabase.auth.signInWithPassword({ email: mail, password });
+      setEnviando(false);
+      if (error) return setError(errorDeCuenta(error));
+      return; // SIGNED_IN abre la app
+    }
+
+    // ---- Crear cuenta ----
+    if (esAnonimo) {
+      // Se le pone correo a la sesión que ya tiene, así sus plantas no se
+      // pierden. La contraseña se elige después de confirmar el correo.
+      setEnviando(true);
+      const { data, error } = await supabase.auth.updateUser(
+        { email: mail, data: { necesita_password: true } },
+        { emailRedirectTo: origen }
+      );
+      setEnviando(false);
+      if (error) return setError(errorDeCuenta(error));
+      if (data?.user?.email === mail) return; // se aplicó al instante: sigue elegir contraseña
+      return setAviso(`Te mandamos un correo a ${mail}. Ábrelo en este celular y toca el enlace para confirmar; después eliges tu contraseña.`);
+    }
+
+    if (password.length < 8) return setError("La contraseña debe tener al menos 8 caracteres.");
+    setEnviando(true);
+    const { data, error } = await supabase.auth.signUp({ email: mail, password, options: { emailRedirectTo: origen } });
+    setEnviando(false);
+    if (error) {
+      const msg = errorDeCuenta(error);
+      if (msg.startsWith("Ya existe")) setModo("login");
+      return setError(msg);
+    }
+    if (!data.session) {
+      setAviso(`Te mandamos un correo a ${mail}. Toca el enlace para confirmar tu cuenta y listo.`);
+    }
+  }
+
+  const campo = {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid " + C.cardLine,
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontFamily: "'Inter', sans-serif",
+    fontSize: 16,
+    color: C.ink,
+    background: C.tileBg,
+  };
+  const etiqueta = { fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, color: C.inkSoft, margin: "0 0 6px 2px", display: "block" };
+
+  if (estado === "cargando") {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.inkSoft }}>Cargando...</p>
+      </div>
+    );
+  }
+
+  const pidePassword = estado === "necesita-password" || estado === "recuperacion";
+  let titulo, subtitulo, boton;
+  if (estado === "necesita-password") {
+    titulo = "Último paso";
+    subtitulo = `Tu correo ${correoActual ? `(${correoActual}) ` : ""}ya quedó confirmado. Elige una contraseña para entrar a tu cuenta.`;
+    boton = "Guardar contraseña";
+  } else if (estado === "recuperacion") {
+    titulo = "Contraseña nueva";
+    subtitulo = "Escribe la contraseña que vas a usar de ahora en adelante.";
+    boton = "Guardar contraseña";
+  } else if (modo === "login") {
+    titulo = "Inicia sesión";
+    subtitulo = "Qué bueno verte de nuevo.";
+    boton = "Entrar";
+  } else if (modo === "olvide") {
+    titulo = "Recupera tu cuenta";
+    subtitulo = "Te mandamos un enlace a tu correo para crear una contraseña nueva.";
+    boton = "Enviar enlace";
+  } else {
+    titulo = "Crea tu cuenta";
+    subtitulo = esAnonimo
+      ? plantasGuardadas > 0
+        ? `Para seguir usando Ámbitat, crea tu cuenta. Tus ${plantasGuardadas === 1 ? "planta se queda" : `${plantasGuardadas} plantas se quedan`} en tu jardín.`
+        : "Para seguir usando Ámbitat, crea tu cuenta."
+      : "Así tu jardín queda guardado aunque cambies de celular.";
+    boton = "Crear cuenta";
+  }
+  const pideCorreo = !pidePassword;
+  const pidePasswordAhora = pidePassword || modo === "login" || (modo === "registro" && !esAnonimo);
+
+  return (
+    <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 18px 32px" }}>
+      <img src="/logo.png" alt="Ámbitat" style={{ height: 42, width: "auto", alignSelf: "center", marginBottom: 22 }} />
+      <form onSubmit={enviar} style={{ background: C.card, borderRadius: 24, padding: "24px 20px", boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 14px 32px -18px rgba(0,0,0,0.3)" }} noValidate>
+        <h1 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 24, color: C.ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>{titulo}</h1>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.inkSoft, margin: "0 0 20px", lineHeight: 1.45 }}>{subtitulo}</p>
+
+        {pideCorreo && (
+          <label style={{ display: "block", marginBottom: 14 }}>
+            <span style={etiqueta}>Correo</span>
+            <input type="email" autoComplete="email" inputMode="email" value={correo} onChange={(e) => setCorreo(e.target.value)} placeholder="tu@correo.com" style={campo} />
+          </label>
+        )}
+        {pidePasswordAhora && modo !== "olvide" && (
+          <label style={{ display: "block", marginBottom: 6 }}>
+            <span style={etiqueta}>Contraseña</span>
+            <input
+              type="password"
+              autoComplete={modo === "login" && !pidePassword ? "current-password" : "new-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={modo === "login" && !pidePassword ? "Tu contraseña" : "Mínimo 8 caracteres"}
+              style={campo}
+            />
+          </label>
+        )}
+        {modo === "login" && !pidePassword && (
+          <button type="button" onClick={() => cambiarModo("olvide")} style={{ background: "none", border: "none", padding: "6px 2px", color: C.green, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+            ¿Olvidaste tu contraseña?
+          </button>
+        )}
+
+        {error && <p role="alert" style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.red, margin: "12px 0 0", lineHeight: 1.4 }}>{error}</p>}
+        {aviso && (
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.green, background: "rgba(63,93,62,0.1)", borderRadius: 12, padding: "10px 12px", margin: "12px 0 0", lineHeight: 1.45 }}>
+            {aviso}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={enviando}
+          style={{ marginTop: 18, width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: enviando ? C.cardLine : C.green, color: enviando ? C.inkSoft : "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, cursor: enviando ? "default" : "pointer" }}
+        >
+          {enviando ? "Un momento..." : boton}
+        </button>
+
+        {!pidePassword && (
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "18px 0 0" }}>
+            {modo === "registro" ? "¿Ya tienes cuenta? " : modo === "login" ? "¿No tienes cuenta? " : ""}
+            <button
+              type="button"
+              onClick={() => cambiarModo(modo === "registro" ? "login" : modo === "login" ? "registro" : "login")}
+              style={{ background: "none", border: "none", padding: 4, color: C.green, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+            >
+              {modo === "registro" ? "Inicia sesión" : modo === "login" ? "Crea una" : "← Regresar"}
+            </button>
+          </p>
+        )}
+        {esAnonimo && modo === "login" && plantasGuardadas > 0 && (
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, textAlign: "center", margin: "8px 0 0", lineHeight: 1.4 }}>
+            Ojo: si entras con otra cuenta, las plantas guardadas en este celular no se pasan a esa cuenta.
+          </p>
+        )}
+      </form>
     </div>
   );
 }
@@ -1188,38 +1415,78 @@ export default function BrotesApp() {
     setGarden((data || []).map(rowToPlant));
   }
 
+  // ---------- Cuenta ----------
+  // cargando | sin-cuenta | anonimo | necesita-password | recuperacion | lista
+  const [authEstado, setAuthEstado] = useState("cargando");
+  const [usuarioCorreo, setUsuarioCorreo] = useState("");
+
   async function reintentarCarga() {
     setGardenError(null);
     setLoadingGarden(true);
-    await initAuth();
+    const { data } = await supabase.auth.getSession();
+    await aplicarSesion(data.session);
   }
 
-  async function initAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
-    let activeSession = session;
-    if (!activeSession) {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error("Error de sesión anónima:", error);
-        setGardenError("No pudimos conectarnos. Revisa tu conexión e intenta de nuevo.");
-        setLoadingGarden(false);
-        setCargandoReservaciones(false);
-        return;
-      }
-      activeSession = data.session;
+  // Decide qué mostrar según la sesión: pantalla de cuenta o la app.
+  async function aplicarSesion(session) {
+    if (!session) {
+      userIdRef.current = null;
+      setUserId(null);
+      setUsuarioCorreo("");
+      setGarden([]);
+      setMisReservaciones([]);
+      setSelectedPlant(null);
+      setScreen("jardin");
+      setAuthEstado((prev) => (prev === "recuperacion" ? prev : "sin-cuenta"));
+      setLoadingGarden(false);
+      setCargandoReservaciones(false);
+      return;
     }
-    if (activeSession) {
-      const uid = activeSession.user.id;
-      userIdRef.current = uid;
-      setUserId(uid);
-      await loadGarden(uid);
-      cargarReservaciones(uid);
+    const u = session.user;
+    userIdRef.current = u.id;
+    setUserId(u.id);
+    setUsuarioCorreo(u.email || "");
+
+    // Sesión anónima de antes de que existieran las cuentas: se le pide crear
+    // su cuenta, y sus plantas se quedan (se carga el jardín para mostrar cuántas).
+    if (u.is_anonymous) {
+      setAuthEstado("anonimo");
+      await loadGarden(u.id);
+      setLoadingGarden(false);
+      return;
     }
+    if (u.user_metadata?.necesita_password) {
+      setAuthEstado("necesita-password");
+      setLoadingGarden(false);
+      return;
+    }
+    setAuthEstado((prev) => (prev === "recuperacion" ? prev : "lista"));
+    if (u.email) setReservaCorreo((actual) => actual || u.email);
+    await loadGarden(u.id);
+    cargarReservaciones(u.id);
     setLoadingGarden(false);
   }
 
+  async function cerrarSesion() {
+    if (!window.confirm("¿Cerrar sesión en este celular?")) return;
+    await supabase.auth.signOut();
+  }
+
   useEffect(() => {
-    initAuth();
+    // Supabase avisa cada que cambia la sesión (al abrir la app, al iniciar o
+    // cerrar sesión, al confirmar el correo o al abrir el enlace de
+    // "olvidé mi contraseña").
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthEstado("recuperacion");
+        return;
+      }
+      if (["INITIAL_SESSION", "SIGNED_IN", "SIGNED_OUT", "USER_UPDATED"].includes(event)) {
+        // setTimeout: Supabase recomienda no llamar a la base de datos dentro
+        // de este aviso directamente.
+        setTimeout(() => aplicarSesion(session), 0);
+      }
+    });
 
     // Si venimos de regreso de Stripe (?pago=exito / ?pago=cancelado), lo mostramos
     // y limpiamos la URL para que no se repita si la persona recarga la página.
@@ -1232,6 +1499,7 @@ export default function BrotesApp() {
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -1553,6 +1821,21 @@ export default function BrotesApp() {
       <style>{FONTS_IMPORT}</style>
       <IntroAnimada />
       <div className="brotes-shell">
+        {authEstado !== "lista" ? (
+          <div className="brotes-scroll">
+            <PantallaCuenta
+              estado={authEstado}
+              plantasGuardadas={garden.length}
+              correoActual={usuarioCorreo}
+              onRecuperada={async () => {
+                setAuthEstado("lista");
+                const { data } = await supabase.auth.getSession();
+                aplicarSesion(data.session);
+              }}
+            />
+          </div>
+        ) : (
+        <>
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
         <div className="brotes-scroll-shade" style={{ opacity: scrolled ? 1 : 0 }} />
@@ -1873,6 +2156,13 @@ export default function BrotesApp() {
                   {notifStatus === "subscribed" && (
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.green }}>🔔</span>
                   )}
+                  <button
+                    onClick={() => setScreen("cuenta")}
+                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -5, opacity: 0.8, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    aria-label="Mi cuenta"
+                  >
+                    <Icon.User style={{ width: 19, height: 19 }} />
+                  </button>
                   <button
                     onClick={() => setScreen("sugerencias")}
                     style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -5, opacity: 0.7, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -2262,6 +2552,32 @@ export default function BrotesApp() {
         )}
 
         {/* ---------------- BUZÓN DE SUGERENCIAS ---------------- */}
+        {screen === "cuenta" && (
+          <div style={{ padding: "18px 16px 20px", flex: 1 }}>
+            <button
+              onClick={() => setScreen("jardin")}
+              style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: "8px 4px", margin: "0 0 6px -4px", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center", gap: 4 }}
+            >
+              <Icon.Back /> Mi jardín
+            </button>
+            <h1 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 24, letterSpacing: "-0.01em", color: C.ink, margin: "0 0 16px" }}>Mi cuenta</h1>
+            <div style={{ background: C.card, borderRadius: 20, padding: "18px 18px" }}>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 4px" }}>Correo</p>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 15.5, color: C.ink, margin: 0, wordBreak: "break-all" }}>{usuarioCorreo}</p>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: "14px 0 0", lineHeight: 1.45 }}>
+                {garden.length === 1 ? "1 planta" : `${garden.length} plantas`} en tu jardín
+                {misReservaciones.length > 0 ? ` · ${misReservaciones.length} ${misReservaciones.length === 1 ? "reservación" : "reservaciones"}` : ""}
+              </p>
+              <button
+                onClick={cerrarSesion}
+                style={{ marginTop: 18, width: "100%", padding: "13px 0", borderRadius: 14, border: "1px solid " + C.cardLine, background: "transparent", color: C.red, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14.5, cursor: "pointer" }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+        )}
+
         {screen === "sugerencias" && (
           <div style={{ padding: "18px 16px 20px", flex: 1 }}>
             <button
@@ -2840,6 +3156,8 @@ export default function BrotesApp() {
           }}
           gardenCount={garden.length}
         />
+        </>
+        )}
       </div>
     </div>
   );

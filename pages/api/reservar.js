@@ -8,7 +8,7 @@
 import Stripe from "stripe";
 import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
 import { obtenerHorasOcupadas } from "../../lib/horariosOcupados";
-import { PRECIO_MANTENIMIENTO_CENTAVOS, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
+import { tamanoPorClave, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
 import { diaCDMX, diasEntre, esFechaValida, esFinDeSemana } from "../../lib/fechas";
 
 function texto(v, max) {
@@ -40,7 +40,9 @@ export default async function handler(req, res) {
   const notas = texto(body.notas, 500) || null;
   const fecha = body.fecha;
   const hora = body.hora;
+  const tamano = tamanoPorClave(body.tamano);
 
+  if (!tamano) return res.status(400).json({ error: "Elige el tamaño de tu jardín." });
   if (!nombre || !direccion) return res.status(400).json({ error: "Falta tu nombre o la dirección." });
   if (telefono.replace(/\D/g, "").length < 8) return res.status(400).json({ error: "Revisa tu número de teléfono." });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return res.status(400).json({ error: "Revisa tu correo." });
@@ -62,22 +64,27 @@ export default async function handler(req, res) {
     }
 
     // ---------- Guarda la reservación (el precio lo pone el servidor) ----------
-    const { data: reservacion, error: insertError } = await admin
-      .from("reservaciones")
-      .insert({
-        user_id: usuario.id,
-        nombre_contacto: nombre,
-        telefono,
-        correo,
-        fecha,
-        hora,
-        direccion,
-        notas,
-        precio_centavos: PRECIO_MANTENIMIENTO_CENTAVOS,
-        estado: "pendiente_pago",
-      })
-      .select()
-      .single();
+    const fila = {
+      user_id: usuario.id,
+      nombre_contacto: nombre,
+      telefono,
+      correo,
+      fecha,
+      hora,
+      direccion,
+      notas,
+      tamano: tamano.key,
+      precio_centavos: tamano.precio,
+      estado: "pendiente_pago",
+    };
+    let { data: reservacion, error: insertError } = await admin.from("reservaciones").insert(fila).select().single();
+    // Si todavía no se corre el SQL que agrega la columna "tamano", se guarda
+    // el tamaño dentro de las notas para no perder la reservación.
+    if (insertError && insertError.code === "42703") {
+      const { tamano: _sinColumna, ...resto } = fila;
+      resto.notas = `[Jardín ${tamano.nombre.toLowerCase()}]${notas ? " " + notas : ""}`;
+      ({ data: reservacion, error: insertError } = await admin.from("reservaciones").insert(resto).select().single());
+    }
 
     if (insertError || !reservacion) {
       console.error("Error creando reservación:", insertError);
@@ -99,9 +106,9 @@ export default async function handler(req, res) {
           {
             price_data: {
               currency: "mxn",
-              unit_amount: PRECIO_MANTENIMIENTO_CENTAVOS,
+              unit_amount: tamano.precio,
               product_data: {
-                name: "Mantenimiento de plantas — Ámbitat",
+                name: `Mantenimiento de plantas · Jardín ${tamano.nombre.toLowerCase()} — Ámbitat`,
                 description: `Visita el ${fecha} a las ${hora}`,
               },
             },
@@ -109,7 +116,9 @@ export default async function handler(req, res) {
           },
         ],
         metadata: { reservacion_id: reservacion.id },
-        success_url: `${origin}/?pago=exito`,
+        // Stripe cambia {CHECKOUT_SESSION_ID} por el número real del pago,
+        // para que la app pueda mostrar el ticket.
+        success_url: `${origin}/?pago=exito&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/?pago=cancelado`,
       });
 

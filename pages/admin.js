@@ -4,6 +4,7 @@
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
 import { diaCDMX, sumarDias, diaSemana } from "../lib/fechas";
+import { tamanoPorClave } from "../lib/servicio";
 
 const C = {
   bg: "#EAC468",
@@ -337,6 +338,7 @@ function Cita({ r, actualizando, onCambiarEstado }) {
         </p>
         {r.notas && <p style={{ fontSize: 13, color: C.inkSoft, margin: 0, lineHeight: 1.4 }}>📝 {r.notas}</p>}
         <p style={{ fontSize: 12, color: C.inkSoft, margin: 0 }}>
+          {tamanoPorClave(r.tamano) ? `Jardín ${tamanoPorClave(r.tamano).nombre.toLowerCase()} · ` : ""}
           ${(r.precio_centavos / 100).toFixed(0)} MXN{r.metodo_pago ? ` · ${r.metodo_pago === "oxxo" ? "OXXO" : "Tarjeta"}` : ""}
         </p>
       </div>

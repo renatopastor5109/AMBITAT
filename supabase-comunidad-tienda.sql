@@ -25,6 +25,8 @@ create table if not exists public.reservaciones (
 -- Si ya habías corrido este archivo antes de que existiera la columna
 -- "direccion", esta línea la agrega sin tronar nada.
 alter table public.reservaciones add column if not exists direccion text;
+-- Tamaño del jardín elegido al reservar (pequeno | mediano | grande)
+alter table public.reservaciones add column if not exists tamano text;
 
 alter table public.reservaciones enable row level security;
 

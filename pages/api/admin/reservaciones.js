@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   const { data, error } = await admin
     .from("reservaciones")
-    .select("id, nombre_contacto, telefono, correo, fecha, hora, direccion, notas, precio_centavos, estado, metodo_pago, created_at")
+    .select("*") // "*" para que funcione aunque todavía no exista alguna columna nueva
     .order("fecha", { ascending: true });
 
   if (error) {

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
-import { PRECIO_MANTENIMIENTO_CENTAVOS, HORARIOS_DISPONIBLES } from "../lib/servicio";
+import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES } from "../lib/servicio";
 import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto } from "../lib/fechas";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
@@ -42,7 +42,7 @@ const ESTADO_TEXTO = {
 };
 
 const FONTS_IMPORT = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&family=IBM+Plex+Mono:wght@400;600&display=swap');
 
 html, body {
   margin: 0;
@@ -119,6 +119,32 @@ html, body {
 @keyframes brotesReveal {
   from { opacity: 0; transform: translateY(18px) scale(0.98); }
   to { opacity: 1; transform: none; }
+}
+
+/* ---------- Ticket de pago ---------- */
+@keyframes ticketMaquina {
+  from { opacity: 0; transform: translateY(-24px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ticketImprime {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+@keyframes ticketVibra {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-0.6px); }
+  75% { transform: translateX(0.6px); }
+}
+@keyframes ticketAparece {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.ticket-maquina { animation: ticketMaquina .5s cubic-bezier(.2,.8,.2,1) both; }
+.ticket-maquina.imprimiendo { animation: ticketMaquina .5s cubic-bezier(.2,.8,.2,1) both, ticketVibra .09s linear .7s 22; }
+.ticket-papel { animation: ticketImprime 2.1s cubic-bezier(.45,.05,.25,1) .7s both; }
+.ticket-despues { animation: ticketAparece .4s ease 2.8s both; }
+@media (prefers-reduced-motion: reduce) {
+  .ticket-maquina, .ticket-maquina.imprimiendo, .ticket-papel, .ticket-despues { animation: none; }
 }
 /* ---------- Animación de entrada ---------- */
 .brotes-intro {
@@ -205,6 +231,16 @@ html, body {
 }
 .brotes-grid > * {
   min-width: 0;
+}
+.brotes-tamanos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+@media (min-width: 560px) {
+  .brotes-tamanos {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 /* Celulares muy angostos (iPhone SE original): una sola columna */
 @media (max-width: 359px) {
@@ -763,10 +799,177 @@ const Icon = {
   ),
 };
 
+// ---------- Ticket de pago: la "máquina" imprime el recibo al volver de Stripe ----------
+function TicketPago({ datos, onCerrar }) {
+  const M = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
+  const F = "'Inter', sans-serif";
+  const pagado = datos.pagado;
+  const esOxxo = datos.metodo === "oxxo";
+  const tamano = tamanoPorClave(datos.reservacion?.tamano);
+  const dinero = (c) => "$" + (c / 100).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pedido = "AMB-" + String(datos.reservacion?.id || "").replace(/-/g, "").slice(0, 6).toUpperCase();
+  const fechaPago = new Date(datos.fechaPago || Date.now())
+    .toLocaleString("es-MX", { timeZone: "America/Mexico_City", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })
+    .replace(",", " ·")
+    .toUpperCase();
+  const visita = datos.reservacion?.fecha
+    ? new Date(datos.reservacion.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "short", day: "numeric", month: "short" }) + " · " + datos.reservacion.hora
+    : "";
+  const pagadoCon = esOxxo
+    ? "OXXO (efectivo)"
+    : datos.tarjeta
+    ? `${datos.tarjeta.marca.charAt(0).toUpperCase() + datos.tarjeta.marca.slice(1)} •••• ${datos.tarjeta.ultimos4}`
+    : "Tarjeta";
+
+  // Código de barras decorativo, siempre igual para el mismo pedido.
+  const barras = [];
+  let semilla = 0;
+  for (const ch of pedido) semilla = (semilla * 31 + ch.charCodeAt(0)) >>> 0;
+  for (let k = 0; k < 46; k++) {
+    semilla = (semilla * 1103515245 + 12345) >>> 0;
+    barras.push(1 + (semilla % 3));
+  }
+
+  const linea = { display: "flex", justifyContent: "space-between", gap: 12, fontFamily: M, fontSize: 12.5, color: "#3a3a3a", margin: "5px 0" };
+  const punteada = { borderTop: "1.5px dashed #cfcfcf", margin: "14px 0" };
+
+  return (
+    <div
+      role="dialog"
+      aria-label={pagado ? "Pago completo" : "Reservación creada"}
+      style={{ position: "absolute", inset: 0, zIndex: 70, background: "#efeadb", overflowY: "auto", padding: "28px 16px 32px", display: "flex", flexDirection: "column", alignItems: "center" }}
+    >
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        {/* ---- La máquina ---- */}
+        <div className={"ticket-maquina imprimiendo"} style={{ position: "relative", zIndex: 2, background: C.dark, borderRadius: 26, padding: 12, boxShadow: "0 18px 40px -20px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 2px 12px" }}>
+            <span style={{ width: 38, height: 38, borderRadius: 10, background: C.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src="/stages/s2.png" alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
+            </span>
+            <button
+              onClick={onCerrar}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(245,239,221,0.14)", color: C.cream, border: "1px solid rgba(245,239,221,0.18)", borderRadius: 999, padding: "9px 16px", fontFamily: F, fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+            >
+              <Icon.Leaf style={{ width: 14, height: 14 }} /> Inicio
+            </button>
+          </div>
+          <div style={{ background: "#1f3321", borderRadius: 18, padding: "16px 16px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontFamily: F, fontWeight: 800, fontSize: 17, color: C.cream, margin: 0 }}>Mantenimiento</p>
+                <p style={{ fontFamily: F, fontSize: 13.5, color: "rgba(245,239,221,0.7)", margin: "2px 0 0" }}>
+                  {tamano ? `Jardín ${tamano.nombre.toLowerCase()}` : "Visita a domicilio"}
+                </p>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <p style={{ fontFamily: F, fontSize: 12.5, color: "rgba(245,239,221,0.7)", margin: 0 }}>Total</p>
+                <p style={{ fontFamily: F, fontWeight: 800, fontSize: 21, color: C.cream, margin: "1px 0 0" }}>{dinero(datos.total)}</p>
+              </div>
+            </div>
+            <p style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: F, fontWeight: 600, fontSize: 14, color: C.cream, margin: "14px 0 0" }}>
+              <span style={{ width: 20, height: 20, borderRadius: "50%", background: pagado ? "#4caf68" : C.amber, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {pagado ? <Icon.Check style={{ width: 12, height: 12, color: "#fff" }} /> : <span style={{ color: "#fff", fontWeight: 800, fontSize: 12 }}>!</span>}
+              </span>
+              {pagado ? "Pago completo" : esOxxo ? "Falta pagar en OXXO" : "Procesando tu pago"}
+            </p>
+          </div>
+          {/* ranura por donde sale el ticket */}
+          <div style={{ height: 9, margin: "12px 6px 0", borderRadius: 6, background: "#152316", boxShadow: "inset 0 2px 3px rgba(0,0,0,0.6)" }} />
+        </div>
+
+        {/* ---- El ticket ---- */}
+        <div style={{ position: "relative", zIndex: 1, margin: "-8px auto 0", width: "88%", overflow: "hidden", paddingBottom: 14 }}>
+          <div
+            className="ticket-papel"
+            style={{
+              background: "#fff",
+              padding: "26px 20px 22px",
+              boxShadow: "0 10px 24px -14px rgba(0,0,0,0.35)",
+              // borde de abajo en zigzag, como papel cortado
+              WebkitMaskImage: "linear-gradient(#000, #000), conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)",
+              WebkitMaskSize: "100% calc(100% - 8px), 14px 8px",
+              WebkitMaskPosition: "top, bottom",
+              WebkitMaskRepeat: "no-repeat, repeat-x",
+              maskImage: "linear-gradient(#000, #000), conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg)",
+              maskSize: "100% calc(100% - 8px), 14px 8px",
+              maskPosition: "top, bottom",
+              maskRepeat: "no-repeat, repeat-x",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto" }} />
+            </div>
+            <div style={punteada} />
+            <div style={{ ...linea, color: "#1d1d1d", fontWeight: 600 }}>
+              <span>MANTENIMIENTO</span>
+              <span>{dinero(datos.total)}</span>
+            </div>
+            <div style={{ ...linea, margin: 0 }}>
+              <span>{tamano ? `Jardín ${tamano.nombre.toLowerCase()}` : "Visita a domicilio"}</span>
+            </div>
+            {visita && (
+              <div style={linea}>
+                <span>Visita</span>
+                <span style={{ textAlign: "right" }}>{visita}</span>
+              </div>
+            )}
+            <div style={punteada} />
+            <div style={{ ...linea, alignItems: "baseline", color: "#1d1d1d" }}>
+              <span style={{ fontWeight: 600, letterSpacing: "0.04em" }}>{pagado ? "TOTAL PAGADO" : "TOTAL A PAGAR"}</span>
+              <span style={{ fontSize: 21, fontWeight: 600 }}>{dinero(datos.total)}</span>
+            </div>
+            <div style={punteada} />
+            <div style={linea}><span>Pedido</span><span>{pedido}</span></div>
+            <div style={linea}><span>{pagado ? "Pagado con" : "Pago"}</span><span>{pagadoCon}</span></div>
+            <div style={linea}><span>Fecha</span><span>{fechaPago}</span></div>
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "stretch", gap: 1.5, height: 46, marginTop: 20 }} aria-hidden="true">
+              {barras.map((w, k) => (
+                <span key={k} style={{ width: w * 1.6, background: k % 2 === 0 ? "#1d1d1d" : "transparent" }} />
+              ))}
+            </div>
+            <p style={{ fontFamily: M, fontSize: 10.5, color: "#8a8a8a", textAlign: "center", letterSpacing: "0.2em", margin: "6px 0 0" }}>{pedido.replace("-", " ")}</p>
+          </div>
+        </div>
+
+        {/* ---- Después de imprimir ---- */}
+        <div className="ticket-despues" style={{ textAlign: "center", marginTop: 6 }}>
+          <p style={{ fontFamily: F, fontSize: 13.5, color: C.inkSoft, margin: "0 0 14px", lineHeight: 1.45 }}>
+            {pagado
+              ? "Tu visita quedó confirmada. Te escribiremos por WhatsApp un día antes."
+              : esOxxo
+              ? "Tu horario queda apartado 2 días. Paga en cualquier OXXO con tu ficha y se confirma solo."
+              : "Estamos confirmando tu pago; en unos minutos lo verás en Tus reservaciones."}
+          </p>
+          {!pagado && datos.fichaOxxo && (
+            <a
+              href={datos.fichaOxxo}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: "block", marginBottom: 10, padding: "13px 0", borderRadius: 999, background: C.green, color: "#fff", fontFamily: F, fontWeight: 700, fontSize: 14.5, textDecoration: "none" }}
+            >
+              Ver mi ficha de pago OXXO
+            </a>
+          )}
+          <button
+            onClick={onCerrar}
+            style={{ width: "100%", padding: "13px 0", borderRadius: 999, border: "1px solid " + C.cardLine, background: C.card, color: C.ink, fontFamily: F, fontWeight: 700, fontSize: 14.5, cursor: "pointer" }}
+          >
+            Ver mis reservaciones
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Animación de entrada: una planta que crece y aparece el logo ----------
 function IntroAnimada() {
-  const [fase, setFase] = useState("visible"); // visible -> saliendo -> fuera
+  // Al regresar de pagar no se muestra: ahí la animación importante es el ticket.
+  const [fase, setFase] = useState(() =>
+    typeof window !== "undefined" && window.location.search.includes("pago=") ? "fuera" : "visible"
+  ); // visible -> saliendo -> fuera
   useEffect(() => {
+    if (fase === "fuera") return;
     const t1 = setTimeout(() => setFase("saliendo"), 2000);
     const t2 = setTimeout(() => setFase("fuera"), 2500);
     return () => {
@@ -1521,6 +1724,9 @@ export default function BrotesApp() {
   const [reservaDireccion, setReservaDireccion] = useState("");
   const [reservaNotas, setReservaNotas] = useState("");
   const [reservaFechaError, setReservaFechaError] = useState(null);
+  // Pasos de la Tienda: inicio (tarjeta) → tamano (elegir jardín) → datos (formulario)
+  const [tiendaPaso, setTiendaPaso] = useState("inicio");
+  const [reservaTamano, setReservaTamano] = useState(null);
   const [horasOcupadas, setHorasOcupadas] = useState([]);
 
   // Cada que se elige una fecha, pregunta qué horas ya están tomadas para no
@@ -1574,6 +1780,9 @@ export default function BrotesApp() {
   const [reservaDetalle, setReservaDetalle] = useState(null); // reservación seleccionada para ver su detalle
   const [cargandoReservaciones, setCargandoReservaciones] = useState(true);
   const [pagoStatus, setPagoStatus] = useState(null); // 'exito' | 'cancelado' | null
+  // Ticket animado al volver de pagar: se piden los datos reales a Stripe.
+  const [sesionPagoId, setSesionPagoId] = useState(null);
+  const [ticket, setTicket] = useState(null);
 
   async function cargarReservaciones(uid) {
     setCargandoReservaciones(true);
@@ -1589,6 +1798,11 @@ export default function BrotesApp() {
   async function reservarYPagar() {
     if (!userIdRef.current) {
       setReservaError("No hay conexión con tu cuenta. Recarga la app e intenta de nuevo.");
+      return;
+    }
+    if (!tamanoPorClave(reservaTamano)) {
+      setTiendaPaso("tamano");
+      setReservaError("Elige el tamaño de tu jardín.");
       return;
     }
     if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha || !reservaDireccion.trim()) {
@@ -1613,6 +1827,7 @@ export default function BrotesApp() {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          tamano: reservaTamano,
           nombre: reservaNombre,
           telefono: reservaTelefono,
           correo: reservaCorreo,
@@ -1751,6 +1966,35 @@ export default function BrotesApp() {
     setAuthEstado("anonimo");
   }
 
+  useEffect(() => {
+    if (!sesionPagoId || authEstado !== "lista") return;
+    let vigente = true;
+    (async () => {
+      try {
+        const token = await tokenSesion();
+        const r = await fetch(`/api/estado-pago?session_id=${encodeURIComponent(sesionPagoId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await r.json();
+        if (vigente && r.ok) {
+          setTicket(data);
+          setPagoStatus(null); // el ticket reemplaza el aviso verde
+          setTiendaPaso("inicio");
+          setReservaTamano(null);
+        }
+      } catch (err) {
+        console.error("No se pudo cargar el ticket:", err); // se queda el aviso verde de respaldo
+      } finally {
+        if (vigente) setSesionPagoId(null);
+      }
+      // El aviso de Stripe (webhook) puede tardar unos segundos en marcarla pagada.
+      setTimeout(() => userIdRef.current && cargarReservaciones(userIdRef.current), 4000);
+    })();
+    return () => {
+      vigente = false;
+    };
+  }, [sesionPagoId, authEstado]);
+
   async function cerrarSesion() {
     if (!window.confirm("¿Cerrar sesión en este celular?")) return;
     await supabase.auth.signOut();
@@ -1780,6 +2024,8 @@ export default function BrotesApp() {
       if (pago === "exito" || pago === "cancelado") {
         setPagoStatus(pago);
         setScreen("tienda");
+        const sid = params.get("session_id");
+        if (pago === "exito" && sid) setSesionPagoId(sid);
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
@@ -3139,122 +3385,229 @@ export default function BrotesApp() {
               </div>
             )}
 
-            <div style={{ background: C.card, borderRadius: 20, padding: "18px 16px", marginBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: C.ink, margin: 0 }}>
-                  Mantenimiento de plantas
-                </p>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: C.green, margin: 0 }}>
-                  ${(PRECIO_MANTENIMIENTO_CENTAVOS / 100).toFixed(0)} MXN
-                </p>
-              </div>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.4 }}>
-                Revisión, riego, poda ligera y consejos personalizados para tus plantas, en tu casa.
-              </p>
+            {(() => {
+              const tamanoElegido = tamanoPorClave(reservaTamano);
+              const atras = (paso) => (
+                <button
+                  onClick={() => {
+                    setTiendaPaso(paso);
+                    setReservaError(null);
+                  }}
+                  style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: "6px 0", margin: "0 0 6px", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  <Icon.Back /> Atrás
+                </button>
+              );
+              const botonPrincipal = (texto, onClick, disabled) => (
+                <button
+                  onClick={onClick}
+                  disabled={disabled}
+                  style={{
+                    marginTop: 16,
+                    width: "100%",
+                    padding: "14px 0",
+                    borderRadius: 14,
+                    border: "none",
+                    background: disabled ? C.cardLine : C.green,
+                    color: disabled ? C.inkSoft : "#fff",
+                    fontFamily: "'Inter', sans-serif",
+                    fontWeight: 700,
+                    fontSize: 14.5,
+                    cursor: disabled ? "default" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Icon.Card style={{ width: 15, height: 15 }} />
+                  {texto}
+                </button>
+              );
+              return (
+                <div style={{ background: C.card, borderRadius: 20, padding: "18px 16px", marginBottom: 20 }}>
+                  {tiendaPaso !== "inicio" && atras(tiendaPaso === "datos" ? "tamano" : "inicio")}
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, color: C.ink, margin: 0 }}>
+                      Mantenimiento de plantas
+                    </p>
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, color: C.green, margin: 0, whiteSpace: "nowrap" }}>
+                      {tiendaPaso === "datos" && tamanoElegido
+                        ? `${formatoPrecio(tamanoElegido.precio)} MXN`
+                        : `Desde ${formatoPrecio(PRECIO_DESDE_CENTAVOS)}`}
+                    </p>
+                  </div>
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 4px", lineHeight: 1.4 }}>
+                    {tiendaPaso === "datos" && tamanoElegido
+                      ? `Jardín ${tamanoElegido.nombre.toLowerCase()} · ${tamanoElegido.incluye[0]}`
+                      : "Revisión, riego, poda ligera y consejos personalizados para tus plantas, en tu casa."}
+                  </p>
 
+                  {/* ---- Paso 1 ---- */}
+                  {tiendaPaso === "inicio" && (
+                    <>
+                      {botonPrincipal("Reservar", () => setTiendaPaso("tamano"), false)}
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
+                        Puedes pagar con tarjeta o en efectivo en OXXO.
+                      </p>
+                    </>
+                  )}
+
+                  {/* ---- Paso 2: tamaño del jardín ---- */}
+                  {tiendaPaso === "tamano" && (
+                    <>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14.5, color: C.ink, margin: "14px 0 10px" }}>
+                        ¿Cuál es el tamaño de tu jardín?
+                      </p>
+                      <div className="brotes-tamanos" role="radiogroup" aria-label="Tamaño del jardín">
+                        {TAMANOS.map((t) => {
+                          const activo = reservaTamano === t.key;
+                          return (
+                            <button
+                              key={t.key}
+                              role="radio"
+                              aria-checked={activo}
+                              aria-label={`Jardín ${t.nombre.toLowerCase()}, ${formatoPrecio(t.precio)}: ${t.incluye.join(", ")}`}
+                              onClick={() => {
+                                setReservaTamano(t.key);
+                                setReservaError(null);
+                              }}
+                              style={{
+                                textAlign: "left",
+                                background: activo ? "#fff" : C.tileBg,
+                                border: "2px solid " + (activo ? C.green : "transparent"),
+                                borderRadius: 16,
+                                padding: "12px 12px 14px",
+                                cursor: "pointer",
+                                boxShadow: activo ? "0 8px 20px -14px rgba(40,64,42,0.6)" : "none",
+                                transition: "border-color .15s, background .15s",
+                              }}
+                            >
+                              <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                                <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, color: C.ink }}>{t.nombre}</span>
+                                <span
+                                  aria-hidden="true"
+                                  style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (activo ? C.green : C.cardLine), background: activo ? C.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                                >
+                                  {activo && <Icon.Check style={{ width: 10, height: 10, color: "#fff" }} />}
+                                </span>
+                              </span>
+                              <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 18, color: C.green, margin: "2px 0 8px" }}>
+                                {formatoPrecio(t.precio)}
+                              </span>
+                              {t.incluye.map((linea) => (
+                                <span key={linea} style={{ display: "flex", gap: 6, fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, lineHeight: 1.35, marginTop: 4 }}>
+                                  <span aria-hidden="true" style={{ color: C.green }}>•</span>
+                                  {linea}
+                                </span>
+                              ))}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {reservaError && (
+                        <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
+                      )}
+                      {botonPrincipal(
+                        tamanoElegido ? `Continuar · ${formatoPrecio(tamanoElegido.precio)}` : "Elige un tamaño",
+                        () => setTiendaPaso("datos"),
+                        !tamanoElegido
+                      )}
+                    </>
+                  )}
+
+                  {/* ---- Paso 3: datos de la visita ---- */}
+                  {tiendaPaso === "datos" && (
+                    <>
+                      <div style={{ height: 12 }} />
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <input
-                  value={reservaNombre}
-                  onChange={(e) => setReservaNombre(e.target.value)}
-                  placeholder="Tu nombre"
-                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
-                />
-                <input
-                  value={reservaTelefono}
-                  onChange={(e) => setReservaTelefono(e.target.value)}
-                  placeholder="Teléfono (WhatsApp)"
-                  type="tel"
-                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
-                />
-                <input
-                  value={reservaCorreo}
-                  onChange={(e) => setReservaCorreo(e.target.value)}
-                  placeholder="Correo (para tu recibo de pago)"
-                  type="email"
-                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
-                />
-                <input
-                  value={reservaDireccion}
-                  onChange={(e) => setReservaDireccion(e.target.value)}
-                  placeholder="Dirección de la visita (calle, número, colonia)"
-                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
-                />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Fecha</span>
-                    <input
-                      value={reservaFecha}
-                      onChange={(e) => handleReservaFechaChange(e.target.value)}
-                      type="date"
-                      min={diaCDMX()}
-                      style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
-                    />
-                  </label>
-                  <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Hora</span>
-                  <select
-                    value={reservaHora}
-                    onChange={(e) => setReservaHora(e.target.value)}
-                    style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
-                  >
-                    {HORARIOS_DISPONIBLES.map((h) => {
-                      const ocupada = horasOcupadas.includes(h);
-                      return (
-                        <option key={h} value={h} disabled={ocupada}>
-                          {h}{ocupada ? " (ocupado)" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  </label>
+                        <input
+                          value={reservaNombre}
+                          onChange={(e) => setReservaNombre(e.target.value)}
+                          placeholder="Tu nombre"
+                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                        />
+                        <input
+                          value={reservaTelefono}
+                          onChange={(e) => setReservaTelefono(e.target.value)}
+                          placeholder="Teléfono (WhatsApp)"
+                          type="tel"
+                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                        />
+                        <input
+                          value={reservaCorreo}
+                          onChange={(e) => setReservaCorreo(e.target.value)}
+                          placeholder="Correo (para tu recibo de pago)"
+                          type="email"
+                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                        />
+                        <input
+                          value={reservaDireccion}
+                          onChange={(e) => setReservaDireccion(e.target.value)}
+                          placeholder="Dirección de la visita (calle, número, colonia)"
+                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                        />
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Fecha</span>
+                            <input
+                              value={reservaFecha}
+                              onChange={(e) => handleReservaFechaChange(e.target.value)}
+                              type="date"
+                              min={diaCDMX()}
+                              style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
+                            />
+                          </label>
+                          <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Hora</span>
+                          <select
+                            value={reservaHora}
+                            onChange={(e) => setReservaHora(e.target.value)}
+                            style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
+                          >
+                            {HORARIOS_DISPONIBLES.map((h) => {
+                              const ocupada = horasOcupadas.includes(h);
+                              return (
+                                <option key={h} value={h} disabled={ocupada}>
+                                  {h}{ocupada ? " (ocupado)" : ""}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          </label>
+                        </div>
+                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError || diaLleno ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
+                          {reservaFechaError ||
+                            (diaLleno
+                              ? "Ese día ya está lleno. Elige otro sábado o domingo."
+                              : "El mantenimiento solo se agenda en sábado o domingo.")}
+                        </p>
+                        <textarea
+                          value={reservaNotas}
+                          onChange={(e) => setReservaNotas(e.target.value)}
+                          placeholder="Notas para la visita (opcional)"
+                          rows={2}
+                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: 10, fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, resize: "none", boxSizing: "border-box", background: C.tileBg }}
+                        />
+                      </div>
+
+
+                      {reservaError && (
+                        <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
+                      )}
+                      {botonPrincipal(
+                        reservando ? "Preparando pago..." : `Reservar y pagar ${tamanoElegido ? formatoPrecio(tamanoElegido.precio) : ""}`,
+                        reservarYPagar,
+                        reservando
+                      )}
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
+                        Puedes pagar con tarjeta o en efectivo en OXXO.
+                      </p>
+                    </>
+                  )}
                 </div>
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError || diaLleno ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
-                  {reservaFechaError ||
-                    (diaLleno
-                      ? "Ese día ya está lleno. Elige otro sábado o domingo."
-                      : "El mantenimiento solo se agenda en sábado o domingo.")}
-                </p>
-                <textarea
-                  value={reservaNotas}
-                  onChange={(e) => setReservaNotas(e.target.value)}
-                  placeholder="Notas para la visita (opcional)"
-                  rows={2}
-                  style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: 10, fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, resize: "none", boxSizing: "border-box", background: C.tileBg }}
-                />
-              </div>
-
-              {reservaError && (
-                <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
-              )}
-
-              <button
-                onClick={reservarYPagar}
-                disabled={reservando}
-                style={{
-                  marginTop: 14,
-                  width: "100%",
-                  padding: "13px 0",
-                  borderRadius: 14,
-                  border: "none",
-                  background: reservando ? C.cardLine : C.green,
-                  color: reservando ? C.inkSoft : "#fff",
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: reservando ? "default" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                <Icon.Card style={{ width: 15, height: 15 }} />
-                {reservando ? "Preparando pago..." : `Reservar y pagar $${(PRECIO_MANTENIMIENTO_CENTAVOS / 100).toFixed(0)}`}
-              </button>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
-                Puedes pagar con tarjeta o en efectivo en OXXO.
-              </p>
-            </div>
+              );
+            })()}
 
             <Tag>Tus reservaciones</Tag>
             <div style={{ marginTop: 10 }}>
@@ -3289,7 +3642,8 @@ export default function BrotesApp() {
                           {new Date(r.fecha + "T00:00:00").toLocaleDateString("es-MX", { day: "numeric", month: "short" })} · {r.hora}
                         </p>
                         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: "2px 0 0" }}>
-                          ${(r.precio_centavos / 100).toFixed(0)} MXN
+                          {tamanoPorClave(r.tamano) ? `Jardín ${tamanoPorClave(r.tamano).nombre.toLowerCase()} · ` : ""}
+                          {formatoPrecio(r.precio_centavos)} MXN
                         </p>
                         {r.direccion && (
                           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: C.inkSoft, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -3321,6 +3675,8 @@ export default function BrotesApp() {
         )}
 
         </div>
+
+        {ticket && authEstado === "lista" && <TicketPago datos={ticket} onCerrar={() => setTicket(null)} />}
 
         {reservaDetalle && (
           <div
@@ -3413,7 +3769,10 @@ export default function BrotesApp() {
                       <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
                         Precio
                       </p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>${(r.precio_centavos / 100).toFixed(0)} MXN</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>
+                        {formatoPrecio(r.precio_centavos)} MXN
+                        {tamanoPorClave(r.tamano) ? ` · Jardín ${tamanoPorClave(r.tamano).nombre.toLowerCase()}` : ""}
+                      </p>
                     </div>
                   </div>
                 </div>

@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
 import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES } from "../lib/servicio";
 import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto } from "../lib/fechas";
+import { tipsDelDia } from "../lib/tips";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
@@ -358,15 +359,6 @@ const FASES_PLANTA = [
 
 
 
-// Tips generales de cuidado, para los circulitos tipo "Stories" del jardín
-const TIPS = [
-  { id: "riego", emoji: "💧", corto: "Riego", titulo: "El error más común: regar de más", texto: "Más plantas mueren por exceso de riego que por falta de agua. Antes de regar, mete un dedo 2-3 cm en la tierra — si se siente húmeda, espera un día más." },
-  { id: "luz", emoji: "☀️", corto: "Luz", titulo: "No toda la 'luz' es igual", texto: "Luz indirecta brillante significa cerca de una ventana pero sin que el sol pegue directo en las hojas. El sol directo de mediodía puede quemarlas." },
-  { id: "hojas", emoji: "🍂", corto: "Hojas", titulo: "Hojas amarillas no siempre es lo mismo", texto: "Una hoja amarilla vieja que se cae sola es normal. Varias hojas amarillas a la vez casi siempre es señal de exceso de riego." },
-  { id: "plagas", emoji: "🔍", corto: "Plagas", titulo: "Revisa el envés de las hojas", texto: "Los ácaros y cochinillas casi siempre aparecen primero por debajo de las hojas. Revisa ahí cada par de semanas, antes de que se noten por arriba." },
-  { id: "trasplante", emoji: "🪴", corto: "Maceta", titulo: "¿Cuándo cambiar de maceta?", texto: "Si ves raíces saliendo por el hoyo de abajo, o el agua ya no se absorbe y se queda encharcada arriba, es momento de una maceta más grande." },
-  { id: "humedad", emoji: "🌫️", corto: "Humedad", titulo: "Ambientes secos afectan más de lo que crees", texto: "El aire acondicionado y la calefacción bajan mucho la humedad. Agrupar varias plantas juntas ayuda a que se den un poco de humedad entre ellas." },
-];
 
 // Etapas de crecimiento de la "plantita" del buzón de tips: evoluciona según
 // qué tan sano está el jardín en general y la mejor racha de riego que tengas,
@@ -1491,9 +1483,14 @@ export default function BrotesApp() {
   const [compareMode, setCompareMode] = useState(false);
   const [ordenJardin, setOrdenJardin] = useState("recientes");
   const [activeTip, setActiveTip] = useState(null); // índice del tip abierto, o null
+  // Los 6 tips/datos curiosos de hoy (cambian cada día, hora de CDMX).
+  const [hoyTips] = useState(() => diaCDMX());
+  const [TIPS] = useState(() => tipsDelDia(hoyTips));
+  // Cuáles ya vio hoy (el globito rojo se reinicia cada día).
   const [viewedTips, setViewedTips] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("ambitat-tips-vistos") || "[]");
+      const guardado = JSON.parse(localStorage.getItem("ambitat-tips-vistos") || "{}");
+      return guardado && guardado.dia === hoyTips && Array.isArray(guardado.ids) ? guardado.ids : [];
     } catch {
       return [];
     }
@@ -1506,7 +1503,7 @@ export default function BrotesApp() {
       if (prev.includes(id)) return prev;
       const nuevos = [...prev, id];
       try {
-        localStorage.setItem("ambitat-tips-vistos", JSON.stringify(nuevos));
+        localStorage.setItem("ambitat-tips-vistos", JSON.stringify({ dia: hoyTips, ids: nuevos }));
       } catch {}
       return nuevos;
     });
@@ -3696,7 +3693,7 @@ export default function BrotesApp() {
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "auto" }}>
               <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Tip de cuidado
+                {TIPS[activeTip].tipo === "dato" ? "¿Sabías que...?" : "Tip de cuidado"}
               </span>
               <button onClick={() => setActiveTip(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 10, margin: -10 }}>
                 <Icon.X style={{ width: 20, height: 20 }} />

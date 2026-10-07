@@ -1,9 +1,8 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
 import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES } from "../lib/servicio";
 import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto } from "../lib/fechas";
-import { tipsDelDia } from "../lib/tips";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
@@ -358,6 +357,16 @@ const FASES_PLANTA = [
 ];
 
 
+
+// Tips generales de cuidado, para los circulitos tipo "Stories" del jardín
+const TIPS = [
+  { id: "riego", emoji: "💧", corto: "Riego", titulo: "El error más común: regar de más", texto: "Más plantas mueren por exceso de riego que por falta de agua. Antes de regar, mete un dedo 2-3 cm en la tierra — si se siente húmeda, espera un día más." },
+  { id: "luz", emoji: "☀️", corto: "Luz", titulo: "No toda la 'luz' es igual", texto: "Luz indirecta brillante significa cerca de una ventana pero sin que el sol pegue directo en las hojas. El sol directo de mediodía puede quemarlas." },
+  { id: "hojas", emoji: "🍂", corto: "Hojas", titulo: "Hojas amarillas no siempre es lo mismo", texto: "Una hoja amarilla vieja que se cae sola es normal. Varias hojas amarillas a la vez casi siempre es señal de exceso de riego." },
+  { id: "plagas", emoji: "🔍", corto: "Plagas", titulo: "Revisa el envés de las hojas", texto: "Los ácaros y cochinillas casi siempre aparecen primero por debajo de las hojas. Revisa ahí cada par de semanas, antes de que se noten por arriba." },
+  { id: "trasplante", emoji: "🪴", corto: "Maceta", titulo: "¿Cuándo cambiar de maceta?", texto: "Si ves raíces saliendo por el hoyo de abajo, o el agua ya no se absorbe y se queda encharcada arriba, es momento de una maceta más grande." },
+  { id: "humedad", emoji: "🌫️", corto: "Humedad", titulo: "Ambientes secos afectan más de lo que crees", texto: "El aire acondicionado y la calefacción bajan mucho la humedad. Agrupar varias plantas juntas ayuda a que se den un poco de humedad entre ellas." },
+];
 
 // Etapas de crecimiento de la "plantita" del buzón de tips: evoluciona según
 // qué tan sano está el jardín en general y la mejor racha de riego que tengas,
@@ -990,6 +999,7 @@ function IntroAnimada() {
 // Traduce los errores de Supabase (vienen en inglés) a algo entendible.
 function errorDeCuenta(err) {
   const m = (err?.message || "").toLowerCase();
+  if (m.includes("token") && (m.includes("expired") || m.includes("invalid"))) return "Ese código no es correcto o ya venció. Revísalo o pide uno nuevo.";
   if (m.includes("invalid login credentials")) return "Correo o contraseña incorrectos.";
   if (m.includes("already registered") || m.includes("already been registered") || m.includes("already exists"))
     return "Ya existe una cuenta con ese correo. Inicia sesión.";
@@ -1059,10 +1069,10 @@ const LogoProveedor = {
 };
 const NOMBRE_PROVEEDOR = { apple: "Apple", google: "Google", facebook: "Facebook" };
 
-// Pregunta a Supabase cuáles inicios de sesión están activados, para mostrar
-// solo los botones que de verdad funcionan.
+// Pregunta a Supabase qué inicios de sesión están activados.
+// null = todavía no se sabe (o no se pudo preguntar).
 function useProveedoresActivos() {
-  const [proveedores, setProveedores] = useState([]);
+  const [activos, setActivos] = useState(null);
   useEffect(() => {
     let vigente = true;
     fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
@@ -1070,37 +1080,44 @@ function useProveedoresActivos() {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        const ext = d?.external || {};
-        if (vigente) setProveedores(["apple", "google", "facebook"].filter((p) => ext[p]));
+        if (vigente && d) setActivos(d.external || {});
       })
       .catch(() => {});
     return () => {
       vigente = false;
     };
   }, []);
-  return proveedores;
+  return activos;
 }
 
-function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, correoActual, onRecuperada, onProbar }) {
+// Pantalla de cuenta, lo más simple posible:
+//  - "Continuar con Google" (y Apple/Facebook si están activados)
+//  - "Continuar con correo": se escribe el correo, llega un código de 6 dígitos
+//    y listo. Sin contraseñas: el mismo camino sirve para crear cuenta y entrar.
+function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, onProbar }) {
   const [errorEnlace] = useState(leerErrorDeEnlace);
-  const proveedores = useProveedoresActivos();
-  // inicio = botones de Apple/Google/Facebook/correo; correo = formulario
-  const [vista, setVista] = useState(errorEnlace?.tipo === "correo" ? "correo" : "inicio");
-  const [modo, setModo] = useState(errorEnlace ? "login" : "registro"); // registro | login | olvide
+  const activos = useProveedoresActivos();
+  const [paso, setPaso] = useState(errorEnlace?.tipo === "correo" ? "correo" : "opciones"); // opciones | correo | codigo
   const [correo, setCorreo] = useState("");
-  const [password, setPassword] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [tipoCodigo, setTipoCodigo] = useState("email"); // email | email_change (cuenta de prueba que guarda su planta)
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(errorEnlace?.mensaje || null);
   const [aviso, setAviso] = useState(null);
-  // Se muestra "Reenviar correo de confirmación" cuando hace falta confirmar.
-  const [puedeReenviar, setPuedeReenviar] = useState(errorEnlace?.tipo === "correo");
+  const [esperaReenvio, setEsperaReenvio] = useState(0);
 
   const origen = typeof window !== "undefined" ? window.location.origin : undefined;
   const esAnonimo = estado === "anonimo";
-  const pidePassword = estado === "necesita-password" || estado === "recuperacion";
+  const F = "'Inter', sans-serif";
 
-  // Si la persona regresa de Google/Apple/Facebook con "Atrás", el navegador
-  // puede mostrar esta pantalla tal como la dejó (con los botones bloqueados).
+  // Cuenta regresiva para "Reenviar código" (Supabase permite 1 cada 60 s).
+  useEffect(() => {
+    if (esperaReenvio <= 0) return;
+    const t = setTimeout(() => setEsperaReenvio((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [esperaReenvio]);
+
+  // Si regresa de Google/Apple/Facebook con "Atrás", que los botones no se queden bloqueados.
   useEffect(() => {
     function alVolver(e) {
       if (e.persisted) setEnviando(false);
@@ -1109,46 +1126,75 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, correoActual, 
     return () => window.removeEventListener("pageshow", alVolver);
   }, []);
 
-  function irA(nuevaVista, nuevoModo) {
-    setVista(nuevaVista);
-    if (nuevoModo) setModo(nuevoModo);
+  function irA(nuevoPaso) {
+    setPaso(nuevoPaso);
     setError(null);
     setAviso(null);
   }
 
-  // Google / Apple / Facebook. Si viene de la prueba sin cuenta, se "vincula"
-  // a la sesión actual para que su planta no se pierda.
+  // ---------- Google / Apple / Facebook ----------
   async function continuarCon(proveedor) {
     setError(null);
+    if (activos && !activos[proveedor]) {
+      setError(`El inicio con ${NOMBRE_PROVEEDOR[proveedor]} se activa muy pronto. Mientras, entra con tu correo.`);
+      return;
+    }
     setEnviando(proveedor);
     const options = { redirectTo: origen };
+    // Si viene de la prueba gratis, se "vincula" para que su planta no se pierda.
     let { error } = esAnonimo
       ? await supabase.auth.linkIdentity({ provider: proveedor, options })
       : await supabase.auth.signInWithOAuth({ provider: proveedor, options });
-    if (error && esAnonimo) {
-      // Si la vinculación no está activada en Supabase, al menos que pueda entrar.
-      ({ error } = await supabase.auth.signInWithOAuth({ provider: proveedor, options }));
-    }
+    if (error && esAnonimo) ({ error } = await supabase.auth.signInWithOAuth({ provider: proveedor, options }));
     if (error) {
       setEnviando(false);
       setError(errorDeCuenta(error));
       return;
     }
-    // Si no hubo error, el navegador ya se está yendo a la página de
-    // Google/Apple/Facebook. Por si no se fue, se desbloquea en unos segundos.
-    setTimeout(() => setEnviando(false), 6000);
+    setTimeout(() => setEnviando(false), 6000); // por si el navegador no se fue
   }
 
-  async function reenviarConfirmacion() {
-    const mail = correo.trim().toLowerCase();
+  // ---------- Correo: mandar código ----------
+  async function mandarCodigo(e) {
+    e?.preventDefault();
     setError(null);
     setAviso(null);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setError("Escribe tu correo arriba y vuelve a tocar \"Reenviar\".");
-    setEnviando(true);
-    const { error } = await supabase.auth.resend({ type: "signup", email: mail, options: { emailRedirectTo: origen } });
+    const mail = correo.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setError("Revisa que el correo esté bien escrito.");
+    setEnviando("correo");
+    let tipo = "email";
+    let error = null;
+    if (esAnonimo) {
+      // Se le pone el correo a la sesión de prueba, así su planta se queda.
+      ({ error } = await supabase.auth.updateUser({ email: mail }, { emailRedirectTo: origen }));
+      tipo = "email_change";
+      if (error && /already|registered|exists/i.test(error.message || "")) {
+        // Ese correo ya tiene cuenta: entra a esa cuenta (la planta de prueba no se pasa).
+        ({ error } = await supabase.auth.signInWithOtp({ email: mail, options: { emailRedirectTo: origen } }));
+        tipo = "email";
+      }
+    } else {
+      ({ error } = await supabase.auth.signInWithOtp({ email: mail, options: { shouldCreateUser: true, emailRedirectTo: origen } }));
+    }
     setEnviando(false);
     if (error) return setError(errorDeCuenta(error));
-    setAviso(`Listo, te mandamos un correo nuevo a ${mail}. Usa el enlace de ese correo (los anteriores ya no sirven).`);
+    setTipoCodigo(tipo);
+    setCodigo("");
+    setEsperaReenvio(60);
+    setPaso("codigo");
+  }
+
+  // ---------- Correo: escribir código ----------
+  async function verificarCodigo(e) {
+    e?.preventDefault();
+    setError(null);
+    const token = codigo.replace(/\D/g, "");
+    if (token.length < 6) return setError("Escribe el código completo que te llegó por correo.");
+    setEnviando("codigo");
+    const { error } = await supabase.auth.verifyOtp({ email: correo.trim().toLowerCase(), token, type: tipoCodigo });
+    setEnviando(false);
+    if (error) return setError(errorDeCuenta(error));
+    // Listo: Supabase avisa que ya hay sesión y la app se abre sola.
   }
 
   async function probar() {
@@ -1159,118 +1205,6 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, correoActual, 
     if (err) setError(errorDeCuenta(err));
   }
 
-  async function enviar(e) {
-    e.preventDefault();
-    setError(null);
-    setAviso(null);
-    const mail = correo.trim().toLowerCase();
-
-    if (pidePassword) {
-      if (password.length < 8) return setError("Usa al menos 8 caracteres.");
-      setEnviando(true);
-      const { error } = await supabase.auth.updateUser({ password, data: { necesita_password: false } });
-      setEnviando(false);
-      if (error) return setError(errorDeCuenta(error));
-      if (estado === "recuperacion") onRecuperada();
-      return; // USER_UPDATED se encarga de abrir la app
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setError("Revisa que el correo esté bien escrito.");
-
-    if (modo === "olvide") {
-      setEnviando(true);
-      const { error } = await supabase.auth.resetPasswordForEmail(mail, { redirectTo: origen });
-      setEnviando(false);
-      if (error) return setError(errorDeCuenta(error));
-      return setAviso(`Si existe una cuenta con ${mail}, te mandamos un enlace para crear una contraseña nueva.`);
-    }
-
-    if (modo === "login") {
-      if (!password) return setError("Escribe tu contraseña.");
-      setEnviando(true);
-      const { error } = await supabase.auth.signInWithPassword({ email: mail, password });
-      setEnviando(false);
-      if (error) {
-        if ((error.message || "").toLowerCase().includes("not confirmed")) setPuedeReenviar(true);
-        return setError(errorDeCuenta(error));
-      }
-      return; // SIGNED_IN abre la app
-    }
-
-    // ---- Crear cuenta ----
-    if (esAnonimo) {
-      // Se le pone correo a la sesión que ya tiene, así su planta no se
-      // pierde. La contraseña se elige después de confirmar el correo.
-      setEnviando(true);
-      const { data, error } = await supabase.auth.updateUser(
-        { email: mail, data: { necesita_password: true } },
-        { emailRedirectTo: origen }
-      );
-      setEnviando(false);
-      if (error) return setError(errorDeCuenta(error));
-      if (data?.user?.email === mail) return; // se aplicó al instante: sigue elegir contraseña
-      return setAviso(`Te mandamos un correo a ${mail}. Ábrelo en este celular y toca el enlace para confirmar; después eliges tu contraseña.`);
-    }
-
-    if (password.length < 8) return setError("La contraseña debe tener al menos 8 caracteres.");
-    setEnviando(true);
-    const { data, error } = await supabase.auth.signUp({ email: mail, password, options: { emailRedirectTo: origen } });
-    setEnviando(false);
-    if (error) {
-      const msg = errorDeCuenta(error);
-      if (msg.startsWith("Ya existe")) setModo("login");
-      return setError(msg);
-    }
-    if (!data.session) {
-      setPuedeReenviar(true);
-      setAviso(`Te mandamos un correo a ${mail}. Toca el enlace para confirmar tu cuenta y listo.`);
-    }
-  }
-
-  const F = "'Inter', sans-serif";
-  const campo = {
-    width: "100%",
-    boxSizing: "border-box",
-    border: "1px solid " + C.cardLine,
-    borderRadius: 12,
-    padding: "12px 14px",
-    fontFamily: F,
-    fontSize: 16,
-    color: C.ink,
-    background: C.tileBg,
-  };
-  const etiqueta = { fontFamily: F, fontSize: 12.5, fontWeight: 700, color: C.inkSoft, margin: "0 0 6px 2px", display: "block" };
-  const botonPildora = {
-    position: "relative",
-    width: "100%",
-    minHeight: 52,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "0 52px",
-    borderRadius: 999,
-    border: "1px solid #d9cfb2",
-    background: "#fff",
-    fontFamily: F,
-    fontWeight: 600,
-    fontSize: 15.5,
-    color: C.ink,
-    cursor: "pointer",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-  };
-  const iconoPildora = { position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", display: "flex" };
-  const enlace = { background: "none", border: "none", padding: 4, color: C.green, fontFamily: F, fontWeight: 700, fontSize: 14, cursor: "pointer" };
-  const mensajes = (
-    <>
-      {error && <p role="alert" style={{ fontFamily: F, fontSize: 13.5, color: C.red, margin: "14px 0 0", lineHeight: 1.4 }}>{error}</p>}
-      {aviso && (
-        <p style={{ fontFamily: F, fontSize: 13.5, color: C.green, background: "rgba(63,93,62,0.1)", borderRadius: 12, padding: "10px 12px", margin: "14px 0 0", lineHeight: 1.45 }}>
-          {aviso}
-        </p>
-      )}
-    </>
-  );
-
   if (estado === "cargando") {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1279,191 +1213,177 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, correoActual, 
     );
   }
 
-  // ---------- Títulos ----------
-  let titulo, subtitulo;
-  if (estado === "necesita-password") {
-    titulo = "Último paso";
-    subtitulo = `Tu correo ${correoActual ? `(${correoActual}) ` : ""}ya quedó confirmado. Elige una contraseña para entrar a tu cuenta.`;
-  } else if (estado === "recuperacion") {
-    titulo = "Contraseña nueva";
-    subtitulo = "Escribe la contraseña que vas a usar de ahora en adelante.";
-  } else if (esAnonimo && !(vista === "correo" && modo === "login")) {
-    titulo = nombrePlanta ? `Guarda tu ${nombrePlanta}` : "Guarda tu planta";
-    subtitulo =
-      plantasGuardadas > 1
-        ? `Crea tu cuenta gratis para conservar tus ${plantasGuardadas} plantas y escanear todas las que quieras.`
-        : "Crea tu cuenta gratis para guardarla en tu jardín, recibir recordatorios de riego y escanear todas las plantas que quieras.";
-  } else if (vista === "inicio") {
-    titulo = "Inicia sesión";
-    subtitulo = "Entra a tu cuenta o crea una para cuidar tus plantas.";
-  } else if (modo === "login") {
-    titulo = "Entra con tu correo";
-    subtitulo = "Qué bueno verte de nuevo.";
-  } else if (modo === "olvide") {
-    titulo = "Recupera tu cuenta";
-    subtitulo = "Te mandamos un enlace a tu correo para crear una contraseña nueva.";
-  } else {
-    titulo = "Crea tu cuenta";
-    subtitulo = esAnonimo ? "Escribe tu correo; después de confirmarlo eliges tu contraseña." : "Así tu jardín queda guardado aunque cambies de celular.";
-  }
+  // ---------- Estilos ----------
+  const pildora = {
+    position: "relative",
+    width: "100%",
+    minHeight: 54,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 52px",
+    borderRadius: 999,
+    border: "1px solid #ddd3b6",
+    background: "#fff",
+    fontFamily: F,
+    fontWeight: 700,
+    fontSize: 16,
+    color: C.ink,
+    cursor: "pointer",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+  };
+  const icono = { position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)", display: "flex" };
+  const principal = { ...pildora, border: "none", background: C.green, color: "#fff", boxShadow: "0 10px 22px -14px rgba(40,64,42,0.8)" };
+  const enlace = { background: "none", border: "none", padding: 6, color: C.green, fontFamily: F, fontWeight: 700, fontSize: 14.5, cursor: "pointer" };
+  const campo = {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid " + C.cardLine,
+    borderRadius: 14,
+    padding: "14px 16px",
+    fontFamily: F,
+    fontSize: 16,
+    color: C.ink,
+    background: "#fff",
+  };
+  const mensajes = (
+    <>
+      {error && <p role="alert" style={{ fontFamily: F, fontSize: 14, color: C.red, margin: "14px 0 0", lineHeight: 1.4, textAlign: "center" }}>{error}</p>}
+      {aviso && <p style={{ fontFamily: F, fontSize: 14, color: C.green, margin: "14px 0 0", lineHeight: 1.4, textAlign: "center" }}>{aviso}</p>}
+    </>
+  );
+  const encabezado = (titulo, subtitulo) => (
+    <div style={{ textAlign: "center", marginBottom: 26 }}>
+      <img src="/logo.png" alt="Ámbitat" style={{ height: 40, width: "auto", marginBottom: 24 }} />
+      <h1 style={{ fontFamily: F, fontWeight: 800, fontSize: 27, color: C.ink, margin: "0 0 8px", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{titulo}</h1>
+      <p style={{ fontFamily: F, fontSize: 15, color: C.inkSoft, margin: "0 auto", lineHeight: 1.45, maxWidth: 300 }}>{subtitulo}</p>
+    </div>
+  );
+  const contenedor = { flex: "1 0 auto", display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 22px 28px", maxWidth: 420, width: "100%", boxSizing: "border-box", margin: "0 auto" };
+  const atras = (destino) => (
+    <button type="button" onClick={() => irA(destino)} style={{ ...enlace, color: C.inkSoft, fontWeight: 600, alignSelf: "flex-start", marginBottom: 8, display: "flex", alignItems: "center", gap: 4 }}>
+      <Icon.Back /> Atrás
+    </button>
+  );
 
-  const tarjeta = { background: C.card, borderRadius: 26, padding: "26px 20px 22px", boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 14px 32px -18px rgba(0,0,0,0.3)" };
-
-  // ---------- Vista con botones (Apple / Google / Facebook / correo) ----------
-  if (!pidePassword && vista === "inicio") {
+  // ---------- Paso: escribir el código ----------
+  if (paso === "codigo") {
     return (
-      <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 18px 32px" }}>
-        <img src="/logo.png" alt="Ámbitat" style={{ height: 42, width: "auto", alignSelf: "center", marginBottom: 22 }} />
-        <div style={tarjeta}>
-          <h1 style={{ fontFamily: F, fontWeight: 800, fontSize: 26, color: C.ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>{titulo}</h1>
-          <p style={{ fontFamily: F, fontSize: 14.5, color: C.inkSoft, margin: "0 0 22px", lineHeight: 1.45 }}>{subtitulo}</p>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {proveedores.map((p) => {
-              const Logo = LogoProveedor[p];
-              return (
-                <button key={p} type="button" onClick={() => continuarCon(p)} disabled={!!enviando} style={{ ...botonPildora, opacity: enviando && enviando !== p ? 0.6 : 1 }}>
-                  <span style={iconoPildora}><Logo /></span>
-                  {enviando === p ? "Abriendo..." : `Continuar con ${NOMBRE_PROVEEDOR[p]}`}
-                </button>
-              );
-            })}
-            {proveedores.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "4px 0" }} aria-hidden="true">
-                <span style={{ flex: 1, height: 1, background: C.cardLine }} />
-                <span style={{ fontFamily: F, fontSize: 13, color: C.inkSoft }}>o</span>
-                <span style={{ flex: 1, height: 1, background: C.cardLine }} />
-              </div>
-            )}
-            <button type="button" onClick={() => irA("correo", esAnonimo ? "registro" : "login")} disabled={!!enviando} style={botonPildora}>
-              <span style={iconoPildora}><LogoProveedor.correo /></span>
-              Continuar con tu correo
+      <form onSubmit={verificarCodigo} style={contenedor} noValidate>
+        {atras("correo")}
+        {encabezado("Revisa tu correo", `Te mandamos un código a ${correo.trim().toLowerCase()}. Escríbelo aquí.`)}
+        <input
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 8))}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          autoFocus
+          placeholder="000000"
+          aria-label="Código de verificación"
+          style={{ ...campo, textAlign: "center", fontSize: 28, fontWeight: 700, letterSpacing: "0.35em", padding: "16px 12px" }}
+        />
+        <button type="submit" disabled={!!enviando} style={{ ...principal, marginTop: 16, opacity: enviando ? 0.7 : 1 }}>
+          {enviando === "codigo" ? "Entrando..." : "Entrar"}
+        </button>
+        {mensajes}
+        <p style={{ fontFamily: F, fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "20px 0 0", lineHeight: 1.5 }}>
+          ¿No te llegó? Revisa tu carpeta de spam.
+          <br />
+          {esperaReenvio > 0 ? (
+            <span>Puedes pedir otro en {esperaReenvio} s</span>
+          ) : (
+            <button type="button" onClick={mandarCodigo} disabled={!!enviando} style={enlace}>
+              Mandar otro código
             </button>
-          </div>
-          {mensajes}
-
-          {esAnonimo && (
-            <p style={{ fontFamily: F, fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "18px 0 0" }}>
-              <button type="button" onClick={() => irA("correo", "login")} style={enlace}>Ya tengo cuenta</button>
-            </p>
           )}
-        </div>
-
-        {estado === "sin-cuenta" && (
-          <button
-            type="button"
-            onClick={probar}
-            disabled={!!enviando}
-            style={{
-              marginTop: 16,
-              display: "flex",
-              alignItems: "center",
-              gap: 14,
-              textAlign: "left",
-              background: C.green,
-              color: "#fff",
-              border: "none",
-              borderRadius: 22,
-              padding: "16px 18px",
-              cursor: "pointer",
-              boxShadow: "0 12px 26px -16px rgba(40,64,42,0.7)",
-            }}
-          >
-            <img src="/stages/s2.png" alt="" style={{ width: 46, height: 46, objectFit: "contain", flexShrink: 0, background: C.cream, borderRadius: 14, padding: 4 }} />
-            <span style={{ flex: 1 }}>
-              <span style={{ display: "block", fontFamily: F, fontWeight: 800, fontSize: 15.5 }}>
-                {enviando === "probar" ? "Abriendo la cámara..." : "Escanea una planta gratis"}
-              </span>
-              <span style={{ display: "block", fontFamily: F, fontSize: 12.5, opacity: 0.85, marginTop: 2 }}>Sin cuenta. Descubre qué planta es y cómo cuidarla.</span>
-            </span>
-            <span aria-hidden="true" style={{ fontSize: 20 }}>→</span>
-          </button>
-        )}
-      </div>
+        </p>
+      </form>
     );
   }
 
-  // ---------- Formulario de correo / contraseña ----------
-  const pideCorreo = !pidePassword;
-  const pidePasswordAhora = pidePassword || modo === "login" || (modo === "registro" && !esAnonimo);
-  const textoBoton = pidePassword
-    ? "Guardar contraseña"
-    : modo === "login"
-    ? "Entrar"
-    : modo === "olvide"
-    ? "Enviar enlace"
-    : "Crear cuenta";
+  // ---------- Paso: escribir el correo ----------
+  if (paso === "correo") {
+    return (
+      <form onSubmit={mandarCodigo} style={contenedor} noValidate>
+        {atras("opciones")}
+        {encabezado("Continuar con correo", "Te mandamos un código de 6 dígitos. Sin contraseñas.")}
+        <input
+          type="email"
+          value={correo}
+          onChange={(e) => setCorreo(e.target.value)}
+          autoComplete="email"
+          inputMode="email"
+          autoFocus
+          placeholder="tu@correo.com"
+          aria-label="Correo"
+          style={campo}
+        />
+        <button type="submit" disabled={!!enviando} style={{ ...principal, marginTop: 16, opacity: enviando ? 0.7 : 1 }}>
+          {enviando === "correo" ? "Enviando..." : "Mandarme el código"}
+        </button>
+        {mensajes}
+      </form>
+    );
+  }
+
+  // ---------- Paso: opciones ----------
+  const titulo = esAnonimo ? (nombrePlanta ? `Guarda tu ${nombrePlanta}` : "Guarda tu planta") : "Cuida tus plantas con Ámbitat";
+  const subtitulo = esAnonimo
+    ? plantasGuardadas > 1
+      ? `Entra para conservar tus ${plantasGuardadas} plantas y escanear todas las que quieras.`
+      : "Entra para que no se pierda y escanea todas las plantas que quieras."
+    : "Entra en segundos. Si es tu primera vez, tu cuenta se crea sola.";
+  // Google siempre; Apple y Facebook solo si ya están activados.
+  const extras = ["apple", "facebook"].filter((p) => activos?.[p]);
 
   return (
-    <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", justifyContent: "center", padding: "28px 18px 32px" }}>
-      <img src="/logo.png" alt="Ámbitat" style={{ height: 42, width: "auto", alignSelf: "center", marginBottom: 22 }} />
-      <form onSubmit={enviar} style={tarjeta} noValidate>
-        {!pidePassword && (
-          <button type="button" onClick={() => irA("inicio")} style={{ ...enlace, color: C.inkSoft, fontWeight: 600, fontSize: 13.5, padding: "4px 0", margin: "-8px 0 10px", display: "flex", alignItems: "center", gap: 4 }}>
-            ← Otras opciones
-          </button>
-        )}
-        <h1 style={{ fontFamily: F, fontWeight: 800, fontSize: 24, color: C.ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>{titulo}</h1>
-        <p style={{ fontFamily: F, fontSize: 14, color: C.inkSoft, margin: "0 0 20px", lineHeight: 1.45 }}>{subtitulo}</p>
-
-        {pideCorreo && (
-          <label style={{ display: "block", marginBottom: 14 }}>
-            <span style={etiqueta}>Correo</span>
-            <input type="email" autoComplete="email" inputMode="email" value={correo} onChange={(e) => setCorreo(e.target.value)} placeholder="tu@correo.com" style={campo} />
-          </label>
-        )}
-        {pidePasswordAhora && modo !== "olvide" && (
-          <label style={{ display: "block", marginBottom: 6 }}>
-            <span style={etiqueta}>Contraseña</span>
-            <input
-              type="password"
-              autoComplete={modo === "login" && !pidePassword ? "current-password" : "new-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={modo === "login" && !pidePassword ? "Tu contraseña" : "Mínimo 8 caracteres"}
-              style={campo}
-            />
-          </label>
-        )}
-        {modo === "login" && !pidePassword && (
-          <button type="button" onClick={() => irA("correo", "olvide")} style={{ ...enlace, fontWeight: 600, fontSize: 13, padding: "6px 2px" }}>
-            ¿Olvidaste tu contraseña?
-          </button>
-        )}
-
-        {mensajes}
-        {puedeReenviar && !pidePassword && !esAnonimo && (
-          <button type="button" onClick={reenviarConfirmacion} disabled={!!enviando} style={{ ...enlace, marginTop: 10, fontSize: 13.5, padding: "6px 2px", textAlign: "left" }}>
-            Reenviar correo de confirmación
-          </button>
-        )}
-
-        <button
-          type="submit"
-          disabled={!!enviando}
-          style={{ marginTop: 18, width: "100%", padding: "14px 0", borderRadius: 999, border: "none", background: enviando ? C.cardLine : C.green, color: enviando ? C.inkSoft : "#fff", fontFamily: F, fontWeight: 800, fontSize: 15.5, cursor: enviando ? "default" : "pointer" }}
-        >
-          {enviando ? "Un momento..." : textoBoton}
+    <div style={contenedor}>
+      {encabezado(titulo, subtitulo)}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <button type="button" onClick={() => continuarCon("google")} disabled={!!enviando} style={pildora}>
+          <span style={icono}><LogoProveedor.google /></span>
+          {enviando === "google" ? "Abriendo Google..." : "Continuar con Google"}
         </button>
-
-        {!pidePassword && (
-          <p style={{ fontFamily: F, fontSize: 13.5, color: C.inkSoft, textAlign: "center", margin: "18px 0 0" }}>
-            {modo === "registro" ? "¿Ya tienes cuenta? " : modo === "login" ? "¿No tienes cuenta? " : ""}
+        {extras.map((p) => {
+          const Logo = LogoProveedor[p];
+          const esApple = p === "apple";
+          return (
             <button
+              key={p}
               type="button"
-              onClick={() => irA("correo", modo === "registro" ? "login" : modo === "login" ? "registro" : "login")}
-              style={enlace}
+              onClick={() => continuarCon(p)}
+              disabled={!!enviando}
+              style={esApple ? { ...pildora, background: "#000", color: "#fff", border: "none" } : pildora}
             >
-              {modo === "registro" ? "Inicia sesión" : modo === "login" ? "Crea una" : "← Regresar"}
+              <span style={{ ...icono, filter: esApple ? "invert(1)" : "none" }}><Logo /></span>
+              {enviando === p ? "Abriendo..." : `Continuar con ${NOMBRE_PROVEEDOR[p]}`}
             </button>
-          </p>
-        )}
-        {esAnonimo && modo === "login" && plantasGuardadas > 0 && (
-          <p style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, textAlign: "center", margin: "8px 0 0", lineHeight: 1.4 }}>
-            Ojo: si entras con una cuenta que ya tenías, la planta que escaneaste sin cuenta no se pasa a esa cuenta.
-          </p>
-        )}
-      </form>
+          );
+        })}
+        <button type="button" onClick={() => irA("correo")} disabled={!!enviando} style={pildora}>
+          <span style={icono}><LogoProveedor.correo /></span>
+          Continuar con correo
+        </button>
+      </div>
+      {mensajes}
+
+      {estado === "sin-cuenta" && (
+        <button
+          type="button"
+          onClick={probar}
+          disabled={!!enviando}
+          style={{ marginTop: 26, display: "flex", alignItems: "center", gap: 12, background: "rgba(245,239,221,0.7)", border: "1px dashed #c9b98d", borderRadius: 18, padding: "14px 16px", cursor: "pointer", textAlign: "left" }}
+        >
+          <img src="/stages/s2.png" alt="" style={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            <span style={{ display: "block", fontFamily: F, fontWeight: 800, fontSize: 15, color: C.ink }}>
+              {enviando === "probar" ? "Abriendo la cámara..." : "Probar sin cuenta"}
+            </span>
+            <span style={{ display: "block", fontFamily: F, fontSize: 13, color: C.inkSoft, marginTop: 2 }}>Escanea 1 planta gratis y descubre cómo cuidarla.</span>
+          </span>
+          <span aria-hidden="true" style={{ fontSize: 18, color: C.green }}>→</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -1571,14 +1491,9 @@ export default function BrotesApp() {
   const [compareMode, setCompareMode] = useState(false);
   const [ordenJardin, setOrdenJardin] = useState("recientes");
   const [activeTip, setActiveTip] = useState(null); // índice del tip abierto, o null
-  // Los tips y datos curiosos cambian cada día (hora CDMX); ver lib/tips.js
-  const [diaTips] = useState(() => diaCDMX());
-  const TIPS = useMemo(() => tipsDelDia(diaTips), [diaTips]);
-  // Lo ya visto se guarda con la fecha: al día siguiente vuelve a haber pendientes.
   const [viewedTips, setViewedTips] = useState(() => {
     try {
-      const g = JSON.parse(localStorage.getItem("ambitat-tips-vistos") || "null");
-      return g && !Array.isArray(g) && g.dia === diaCDMX() && Array.isArray(g.ids) ? g.ids : [];
+      return JSON.parse(localStorage.getItem("ambitat-tips-vistos") || "[]");
     } catch {
       return [];
     }
@@ -1591,7 +1506,7 @@ export default function BrotesApp() {
       if (prev.includes(id)) return prev;
       const nuevos = [...prev, id];
       try {
-        localStorage.setItem("ambitat-tips-vistos", JSON.stringify({ dia: diaTips, ids: nuevos }));
+        localStorage.setItem("ambitat-tips-vistos", JSON.stringify(nuevos));
       } catch {}
       return nuevos;
     });
@@ -1889,7 +1804,7 @@ export default function BrotesApp() {
   }
 
   // ---------- Cuenta ----------
-  // cargando | sin-cuenta | anonimo | necesita-password | recuperacion | lista
+  // cargando | sin-cuenta | prueba | anonimo | lista
   const [authEstado, setAuthEstado] = useState("cargando");
   const [usuarioCorreo, setUsuarioCorreo] = useState("");
 
@@ -1910,7 +1825,7 @@ export default function BrotesApp() {
       setMisReservaciones([]);
       setSelectedPlant(null);
       setScreen("jardin");
-      setAuthEstado((prev) => (prev === "recuperacion" ? prev : "sin-cuenta"));
+      setAuthEstado("sin-cuenta");
       setLoadingGarden(false);
       setCargandoReservaciones(false);
       return;
@@ -1934,12 +1849,7 @@ export default function BrotesApp() {
       }
       return;
     }
-    if (u.user_metadata?.necesita_password) {
-      setAuthEstado("necesita-password");
-      setLoadingGarden(false);
-      return;
-    }
-    setAuthEstado((prev) => (prev === "recuperacion" ? prev : "lista"));
+    setAuthEstado("lista");
     if (u.email) setReservaCorreo((actual) => actual || u.email);
     await loadGarden(u.id);
     cargarReservaciones(u.id);
@@ -2001,10 +1911,6 @@ export default function BrotesApp() {
     // cerrar sesión, al confirmar el correo o al abrir el enlace de
     // "olvidé mi contraseña").
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setAuthEstado("recuperacion");
-        return;
-      }
       if (["INITIAL_SESSION", "SIGNED_IN", "SIGNED_OUT", "USER_UPDATED"].includes(event)) {
         // setTimeout: Supabase recomienda no llamar a la base de datos dentro
         // de este aviso directamente.
@@ -2359,13 +2265,7 @@ export default function BrotesApp() {
               estado={authEstado}
               plantasGuardadas={garden.length}
               nombrePlanta={garden[garden.length - 1]?.nombre_comun}
-              correoActual={usuarioCorreo}
               onProbar={empezarPrueba}
-              onRecuperada={async () => {
-                setAuthEstado("lista");
-                const { data } = await supabase.auth.getSession();
-                aplicarSesion(data.session);
-              }}
             />
           </div>
         ) : (
@@ -3796,7 +3696,7 @@ export default function BrotesApp() {
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "auto" }}>
               <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                {TIPS[activeTip].tipo === "dato" ? "Dato curioso" : "Tip de cuidado"}
+                Tip de cuidado
               </span>
               <button onClick={() => setActiveTip(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 10, margin: -10 }}>
                 <Icon.X style={{ width: 20, height: 20 }} />

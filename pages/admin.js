@@ -76,9 +76,7 @@ export default function Admin() {
   const [reservaciones, setReservaciones] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
-  const [vista, setVista] = useState("proximas"); // proximas | calendario | historial
-  const [mes, setMes] = useState(() => hoyISO().slice(0, 7)); // "YYYY-MM" del calendario
-  const [diaSel, setDiaSel] = useState(() => hoyISO());
+  const [vista, setVista] = useState("proximas"); // proximas | historial
   const [verPendientes, setVerPendientes] = useState(false);
   const [actualizando, setActualizando] = useState(null);
 
@@ -248,7 +246,6 @@ export default function Admin() {
             <div style={{ display: "flex", background: C.card, borderRadius: 14, padding: 4, marginBottom: 12 }}>
               {[
                 ["proximas", "Próximas"],
-                ["calendario", "Calendario"],
                 ["historial", "Historial"],
               ].map(([k, l]) => (
                 <button
@@ -268,18 +265,7 @@ export default function Admin() {
               </label>
             )}
 
-            {vista === "calendario" ? (
-              <Calendario
-                reservaciones={reservaciones}
-                mes={mes}
-                setMes={setMes}
-                diaSel={diaSel}
-                setDiaSel={setDiaSel}
-                hoy={hoy}
-                actualizando={actualizando}
-                onCambiarEstado={cambiarEstado}
-              />
-            ) : grupos.length === 0 ? (
+            {grupos.length === 0 ? (
               <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "40px 0" }}>
                 {vista === "proximas" ? "No tienes citas próximas por ahora." : "Todavía no hay citas en el historial."}
               </p>
@@ -319,151 +305,6 @@ const botonChico = {
   color: C.ink,
   cursor: "pointer",
 };
-
-const NOMBRES_DIAS = ["L", "M", "M", "J", "V", "S", "D"];
-
-// Prioridad de colores en cada día: lo urgente primero.
-function colorDelDia(citas) {
-  if (citas.some((r) => r.estado === "conflicto")) return C.red;
-  if (citas.some((r) => r.estado === "pagado")) return C.green;
-  if (citas.some((r) => r.estado === "pendiente_pago")) return C.amber;
-  return C.blue; // solo completadas
-}
-
-function Calendario({ reservaciones, mes, setMes, diaSel, setDiaSel, hoy, actualizando, onCambiarEstado }) {
-  const [anio, numMes] = mes.split("-").map(Number);
-
-  // Citas por día (las canceladas no cuentan en el calendario)
-  const porDia = useMemo(() => {
-    const m = {};
-    reservaciones.forEach((r) => {
-      if (r.estado === "cancelado") return;
-      (m[r.fecha] = m[r.fecha] || []).push(r);
-    });
-    return m;
-  }, [reservaciones]);
-
-  const diasDelMes = new Date(Date.UTC(anio, numMes, 0)).getUTCDate();
-  const primero = `${mes}-01`;
-  const huecos = (diaSemana(primero) + 6) % 7; // la semana empieza en lunes
-  const celdas = [];
-  for (let i = 0; i < huecos; i++) celdas.push(null);
-  for (let d = 1; d <= diasDelMes; d++) celdas.push(`${mes}-${String(d).padStart(2, "0")}`);
-
-  const nombreMes = new Date(Date.UTC(anio, numMes - 1, 1)).toLocaleDateString("es-MX", { month: "long", year: "numeric", timeZone: "UTC" });
-  const irAMes = (delta) => {
-    const f = new Date(Date.UTC(anio, numMes - 1 + delta, 1));
-    setMes(f.toISOString().slice(0, 7));
-  };
-  const irAHoy = () => {
-    setMes(hoy.slice(0, 7));
-    setDiaSel(hoy);
-  };
-
-  // Todas las citas del día elegido (incluye canceladas, atenuadas)
-  const delDia = reservaciones
-    .filter((r) => r.fecha === diaSel)
-    .sort((a, b) => horaAMinutos(a.hora) - horaAMinutos(b.hora));
-
-  const citasMes = celdas.reduce((n, f) => n + (f && porDia[f] ? porDia[f].length : 0), 0);
-  const flecha = { background: C.tileBg, border: "none", borderRadius: 10, width: 36, height: 36, fontFamily: F, fontWeight: 800, fontSize: 18, color: C.ink, cursor: "pointer" };
-
-  return (
-    <div>
-      <div style={{ background: C.card, borderRadius: 18, padding: "14px 12px 12px", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <button onClick={() => irAMes(-1)} aria-label="Mes anterior" style={flecha}>‹</button>
-          <div style={{ textAlign: "center" }}>
-            <p style={{ fontWeight: 800, fontSize: 16, color: C.ink, margin: 0, textTransform: "capitalize" }}>{nombreMes}</p>
-            <p style={{ fontSize: 12, color: C.inkSoft, margin: "1px 0 0" }}>
-              {citasMes} {citasMes === 1 ? "cita" : "citas"} este mes
-              {mes !== hoy.slice(0, 7) && (
-                <>
-                  {" · "}
-                  <button onClick={irAHoy} style={{ background: "none", border: "none", padding: 0, fontFamily: F, fontSize: 12, fontWeight: 700, color: C.green, cursor: "pointer", textDecoration: "underline" }}>
-                    ir a hoy
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
-          <button onClick={() => irAMes(1)} aria-label="Mes siguiente" style={flecha}>›</button>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
-          {NOMBRES_DIAS.map((n, i) => (
-            <p key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: C.inkSoft, margin: "0 0 2px" }}>{n}</p>
-          ))}
-          {celdas.map((f, i) => {
-            if (!f) return <div key={"v" + i} />;
-            const citas = porDia[f] || [];
-            const esHoy = f === hoy;
-            const elegido = f === diaSel;
-            const col = citas.length ? colorDelDia(citas) : null;
-            return (
-              <button
-                key={f}
-                onClick={() => setDiaSel(f)}
-                style={{
-                  aspectRatio: "1 / 1.05",
-                  borderRadius: 11,
-                  border: elegido ? "2px solid " + C.green : esHoy ? "2px solid " + C.amber : "2px solid transparent",
-                  background: elegido ? C.tileBg : "transparent",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 3,
-                  padding: 0,
-                  fontFamily: F,
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ fontSize: 13.5, fontWeight: esHoy || elegido ? 800 : 600, color: C.ink }}>{Number(f.slice(8))}</span>
-                {col ? (
-                  <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: col, color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                    {citas.length}
-                  </span>
-                ) : (
-                  <span style={{ height: 18 }} />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 12, paddingLeft: 4 }}>
-          {[
-            [C.green, "Pagada"],
-            [C.amber, "Esperando pago"],
-            [C.red, "Conflicto"],
-            [C.blue, "Completada"],
-          ].map(([c, l]) => (
-            <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: C.inkSoft }}>
-              <span style={{ width: 9, height: 9, borderRadius: "50%", background: c }} />
-              {l}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "0 4px 8px" }}>
-        <p style={{ fontWeight: 800, fontSize: 15, color: C.ink, margin: 0 }}>
-          {diaSel === hoy ? "Hoy · " : ""}
-          {fechaLarga(diaSel)}
-        </p>
-        <p style={{ fontSize: 12.5, fontWeight: 600, color: C.inkSoft, margin: 0 }}>
-          {delDia.length} {delDia.length === 1 ? "cita" : "citas"}
-        </p>
-      </div>
-      {delDia.length === 0 ? (
-        <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "24px 0" }}>No hay citas este día.</p>
-      ) : (
-        delDia.map((r) => <Cita key={r.id} r={r} actualizando={actualizando === r.id} onCambiarEstado={onCambiarEstado} />)
-      )}
-    </div>
-  );
-}
 
 function Stat({ valor, label, destacado }) {
   return (

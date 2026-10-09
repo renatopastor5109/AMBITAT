@@ -2,9 +2,11 @@
 
 App para identificar y cuidar plantas con IA, con recordatorios de riego,
 directorio de viveros en CDMX y reservación de mantenimiento a domicilio.
-Para usarla hay que entrar con Google (o Apple/Facebook si están activados) o
-con un código de 6 dígitos que llega al correo; no hay contraseñas. Sin cuenta se puede hacer 1 escaneo de prueba (sesión anónima);
-al crear la cuenta, esa planta se conserva.
+Se puede usar de inmediato sin cuenta (sesión anónima, hasta 3 plantas). La
+cuenta se pide solo al reservar, al activar recordatorios o al agregar la 4ª
+planta: Google (o Apple/Facebook si están activados) o un código de 6 dígitos
+por correo, sin contraseñas. Al crear la cuenta, sus plantas se conservan.
+Para dejarlo configurado, sigue `GUIA-CUENTAS.md` y revisa `/admin → Ajustes`.
 
 ## Cómo está armada
 

@@ -38,17 +38,24 @@ async function dentroDelLimite(admin, userId) {
   return true;
 }
 
-// ¿Esta sesión sin cuenta todavía tiene su escaneo de prueba? Ya lo usó si
-// tiene algún análisis registrado o alguna planta guardada.
-async function pruebaDisponible(userId) {
+// Sin cuenta se pueden cuidar hasta 3 plantas (y sus seguimientos), con un
+// tope total de análisis para que nadie abuse creando sesiones sin cuenta.
+const PLANTAS_SIN_CUENTA = 3;
+const ANALISIS_SIN_CUENTA = 15;
+
+async function sinCuentaPermitido(userId, seguimientoDe) {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return false;
   const admin = clienteAdmin();
   const [uso, plantas] = await Promise.all([
     admin.from("analisis_uso").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    admin.from("plantas").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    admin.from("plantas").select("id").eq("user_id", userId),
   ]);
   if (plantas.error) return false;
-  return (uso.error ? 0 : uso.count) === 0 && plantas.count === 0;
+  if (!uso.error && uso.count >= ANALISIS_SIN_CUENTA) return false;
+  const ids = (plantas.data || []).map((p) => String(p.id));
+  // Seguimiento de una planta que sí es suya: siempre se permite.
+  if (seguimientoDe != null && ids.includes(String(seguimientoDe))) return true;
+  return ids.length < PLANTAS_SIN_CUENTA;
 }
 
 export default async function handler(req, res) {
@@ -60,12 +67,12 @@ export default async function handler(req, res) {
   if (!usuario) {
     return res.status(401).json({ error: "Inicia sesión para continuar.", requiereCuenta: true });
   }
-  // Sin cuenta solo se permite 1 escaneo de prueba.
-  if (usuario.is_anonymous && !(await pruebaDisponible(usuario.id))) {
-    return res.status(403).json({ error: "Crea tu cuenta para seguir escaneando.", requiereCuenta: true });
-  }
+  const { images, nombreSugerido, faseSugerida, seguimientoDe } = req.body || {};
 
-  const { images, nombreSugerido, faseSugerida } = req.body || {};
+  // Sin cuenta: hasta 3 plantas. La 4ª pide cuenta.
+  if (usuario.is_anonymous && !(await sinCuentaPermitido(usuario.id, seguimientoDe))) {
+    return res.status(403).json({ error: "Entra gratis para seguir agregando plantas.", requiereCuenta: true });
+  }
   const photos = Array.isArray(images)
     ? images.filter((p) => p && typeof p.base64 === "string" && TIPOS_PERMITIDOS.includes(p.mediaType || "image/jpeg"))
     : [];

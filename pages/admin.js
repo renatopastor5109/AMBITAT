@@ -76,7 +76,7 @@ export default function Admin() {
   const [reservaciones, setReservaciones] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
-  const [vista, setVista] = useState("calendario"); // calendario | proximas | historial
+  const [vista, setVista] = useState("calendario"); // calendario | proximas | historial | ajustes
   const [verPendientes, setVerPendientes] = useState(false);
   const [actualizando, setActualizando] = useState(null);
 
@@ -248,6 +248,7 @@ export default function Admin() {
                 ["calendario", "Calendario"],
                 ["proximas", "Próximas"],
                 ["historial", "Historial"],
+                ["ajustes", "Ajustes"],
               ].map(([k, l]) => (
                 <button
                   key={k}
@@ -266,7 +267,9 @@ export default function Admin() {
               </label>
             )}
 
-            {vista === "calendario" ? (
+            {vista === "ajustes" ? (
+              <Ajustes password={password} />
+            ) : vista === "calendario" ? (
               <Calendario reservaciones={reservaciones} hoy={hoy} actualizando={actualizando} onCambiarEstado={cambiarEstado} />
             ) : grupos.length === 0 ? (
               <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "40px 0" }}>
@@ -294,6 +297,123 @@ export default function Admin() {
         )}
       </div>
     </>
+  );
+}
+
+// ---------- Ajustes: ¿qué falta configurar para crear cuentas? ----------
+function Ajustes({ password }) {
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState(null);
+  const [correo, setCorreo] = useState("");
+  const [prueba, setPrueba] = useState(null); // { ok, mensaje }
+  const [enviando, setEnviando] = useState(false);
+
+  async function revisar() {
+    setError(null);
+    try {
+      const r = await fetch("/api/admin/estado-config", { headers: { "x-admin-password": password } });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "No se pudo revisar");
+      setDatos(d);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+  useEffect(() => {
+    revisar();
+  }, []);
+
+  async function probarCorreo(e) {
+    e.preventDefault();
+    setEnviando(true);
+    setPrueba(null);
+    try {
+      const r = await fetch("/api/admin/probar-correo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ correo }),
+      });
+      const d = await r.json();
+      setPrueba(
+        r.ok
+          ? { ok: true, mensaje: "Enviado. Revisa tu bandeja (y spam): si el correo trae un código de 6 dígitos, todo está bien. Si solo trae un enlace, falta poner {{ .Token }} en la plantilla \"Magic Link\"." }
+          : { ok: false, mensaje: d.error }
+      );
+    } catch {
+      setPrueba({ ok: false, mensaje: "No se pudo conectar." });
+    }
+    setEnviando(false);
+  }
+
+  const tarjeta = { background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 12 };
+  const titulo = { fontWeight: 800, fontSize: 15, color: C.ink, margin: "0 0 10px" };
+  const Fila = ({ ok, nombre, detalle, opcional }) => (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderTop: "1px solid " + C.cardLine }}>
+      <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#fff", background: ok ? C.green : opcional ? C.amber : C.red }}>
+        {ok ? "✓" : opcional ? "–" : "✕"}
+      </span>
+      <div style={{ flex: 1 }}>
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: C.ink }}>{nombre}</p>
+        {detalle && <p style={{ margin: "2px 0 0", fontSize: 12.5, color: C.inkSoft, lineHeight: 1.4 }}>{detalle}</p>}
+      </div>
+    </div>
+  );
+
+  if (error) return <p style={{ color: C.red, fontSize: 13.5 }}>{error}</p>;
+  if (!datos) return <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "30px 0" }}>Revisando...</p>;
+  const a = datos.auth;
+
+  return (
+    <div>
+      <div style={tarjeta}>
+        <p style={titulo}>Crear cuenta e iniciar sesión</p>
+        {!a ? (
+          <p style={{ color: C.red, fontSize: 13 }}>No se pudo leer la configuración de Supabase: {datos.authError}</p>
+        ) : (
+          <>
+            <Fila ok={a.sinCuenta} nombre="Usar la app sin cuenta" detalle={a.sinCuenta ? "Activo: la gente entra directo y la cuenta se pide después." : "Apagado: actívalo en Supabase → Authentication → Sign In / Providers → Allow anonymous sign-ins."} />
+            <Fila ok={a.google} nombre="Continuar con Google" detalle={a.google ? "Activo." : "Falta activarlo (paso 1 de la guía)."} />
+            <Fila ok={a.correo} nombre="Continuar con correo" detalle={a.correo ? "Activo. Usa el botón de abajo para revisar que el correo sí llegue." : "Apagado en Supabase → Sign In / Providers → Email."} />
+            <Fila ok={a.registroAbierto} nombre="Registro de cuentas nuevas" detalle={a.registroAbierto ? "Abierto." : "Cerrado: nadie nuevo puede crear cuenta."} />
+            <Fila ok={a.apple} opcional nombre="Continuar con Apple" detalle={a.apple ? "Activo." : "Opcional, para más adelante (paso 4 de la guía)."} />
+            <Fila ok={a.facebook} opcional nombre="Continuar con Facebook" detalle={a.facebook ? "Activo." : "Opcional."} />
+          </>
+        )}
+        {datos.callback && (
+          <p style={{ fontSize: 12, color: C.inkSoft, margin: "10px 0 0", lineHeight: 1.45, wordBreak: "break-all" }}>
+            URL de regreso para Google y Apple: <strong style={{ color: C.ink }}>{datos.callback}</strong>
+          </p>
+        )}
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Probar el correo de acceso</p>
+        <p style={{ fontSize: 13, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45 }}>
+          Manda el mismo correo que recibe un cliente. Prueba con un correo que no sea el tuyo de Supabase para ver si ya llega a cualquiera.
+        </p>
+        <form onSubmit={probarCorreo} style={{ display: "flex", gap: 8 }}>
+          <input
+            type="email"
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
+            placeholder="correo@ejemplo.com"
+            style={{ flex: 1, minWidth: 0, border: "1px solid " + C.cardLine, borderRadius: 12, padding: "11px 12px", fontFamily: F, fontSize: 16, color: C.ink, background: C.tileBg }}
+          />
+          <button type="submit" disabled={enviando || !correo.trim()} style={{ ...botonChico, background: C.green, color: "#fff", border: "none", padding: "0 16px" }}>
+            {enviando ? "..." : "Enviar"}
+          </button>
+        </form>
+        {prueba && <p style={{ fontSize: 13, color: prueba.ok ? C.green : C.red, margin: "10px 0 0", lineHeight: 1.45 }}>{prueba.mensaje}</p>}
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Variables de Vercel</p>
+        {datos.variables.map((v) => (
+          <Fila key={v.nombre} ok={v.lista} opcional={v.nombre === "GOOGLE_MAPS_API_KEY"} nombre={v.nombre} detalle={v.para} />
+        ))}
+      </div>
+      <button onClick={revisar} style={{ ...botonChico, width: "100%", padding: "12px 0" }}>Volver a revisar</button>
+    </div>
   );
 }
 

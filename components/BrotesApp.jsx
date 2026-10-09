@@ -1003,7 +1003,7 @@ function errorDeCuenta(err) {
     return "Demasiados intentos seguidos. Espera unos minutos e intenta de nuevo.";
   if (m.includes("not authorized") || m.includes("sending") || m.includes("smtp"))
     return "No pudimos enviarte el correo. Intenta más tarde o escríbenos.";
-  if (m.includes("anonymous") && m.includes("disabled")) return "La prueba gratis no está disponible ahorita. Crea tu cuenta para continuar.";
+  if (m.includes("anonymous") && m.includes("disabled")) return "Por ahora necesitas una cuenta para usar Ámbitat. Entra con Google o con tu correo.";
   if (m.includes("provider is not enabled") || m.includes("unsupported provider")) return "Esa opción todavía no está disponible. Usa otra.";
   if (m.includes("invalid") && m.includes("email")) return "Revisa que el correo esté bien escrito.";
   if (m.includes("fetch") || m.includes("network")) return "Sin conexión. Revisa tu internet.";
@@ -1086,7 +1086,16 @@ function useProveedoresActivos() {
 //  - "Continuar con Google" (y Apple/Facebook si están activados)
 //  - "Continuar con correo": se escribe el correo, llega un código de 6 dígitos
 //    y listo. Sin contraseñas: el mismo camino sirve para crear cuenta y entrar.
-function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, onProbar }) {
+// Títulos según el momento en que se pide la cuenta (registro diferido).
+const MOTIVOS_CUENTA = {
+  entrar: { titulo: "Entra a tu cuenta", subtitulo: "Guarda tu jardín y úsalo en cualquier celular. Si es tu primera vez, tu cuenta se crea sola." },
+  guardar: { titulo: "Guarda tu jardín", subtitulo: "Así no pierdes tus plantas si cambias de celular o borras el navegador." },
+  plantas: { titulo: "Sigue sumando plantas", subtitulo: "Sin cuenta puedes cuidar hasta 3. Entra gratis para tener todas las que quieras." },
+  reservar: { titulo: "Entra para reservar", subtitulo: "Así te avisamos de tu cita y puedes ver cómo va tu reservación." },
+  recordatorios: { titulo: "Entra para recibir recordatorios", subtitulo: "Así te avisamos cuándo regar aunque cambies de celular." },
+};
+
+function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar, onReintentar }) {
   const [errorEnlace] = useState(leerErrorDeEnlace);
   const activos = useProveedoresActivos();
   const [paso, setPaso] = useState(errorEnlace?.tipo === "correo" ? "correo" : "opciones"); // opciones | correo | codigo
@@ -1099,7 +1108,6 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, onProbar }) {
   const [esperaReenvio, setEsperaReenvio] = useState(0);
 
   const origen = typeof window !== "undefined" ? window.location.origin : undefined;
-  const esAnonimo = estado === "anonimo";
   const F = "'Inter', sans-serif";
 
   // Cuenta regresiva para "Reenviar código" (Supabase permite 1 cada 60 s).
@@ -1187,14 +1195,6 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, onProbar }) {
     setEnviando(false);
     if (error) return setError(errorDeCuenta(error));
     // Listo: Supabase avisa que ya hay sesión y la app se abre sola.
-  }
-
-  async function probar() {
-    setError(null);
-    setEnviando("probar");
-    const err = await onProbar();
-    setEnviando(false);
-    if (err) setError(errorDeCuenta(err));
   }
 
   if (estado === "cargando") {
@@ -1319,12 +1319,15 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, onProbar }) {
   }
 
   // ---------- Paso: opciones ----------
-  const titulo = esAnonimo ? (nombrePlanta ? `Guarda tu ${nombrePlanta}` : "Guarda tu planta") : "Cuida tus plantas con Ámbitat";
-  const subtitulo = esAnonimo
-    ? plantasGuardadas > 1
-      ? `Entra para conservar tus ${plantasGuardadas} plantas y escanear todas las que quieras.`
-      : "Entra para que no se pierda y escanea todas las plantas que quieras."
-    : "Entra en segundos. Si es tu primera vez, tu cuenta se crea sola.";
+  const textos = MOTIVOS_CUENTA[motivo] || {
+    titulo: "Cuida tus plantas con Ámbitat",
+    subtitulo: "Entra en segundos. Si es tu primera vez, tu cuenta se crea sola.",
+  };
+  const titulo = textos.titulo;
+  const subtitulo =
+    motivo === "guardar" && plantasGuardadas > 0
+      ? `Así no pierdes ${plantasGuardadas === 1 ? "tu planta" : `tus ${plantasGuardadas} plantas`} si cambias de celular o borras el navegador.`
+      : textos.subtitulo;
   // Google siempre; Apple y Facebook solo si ya están activados.
   const extras = ["apple", "facebook"].filter((p) => activos?.[p]);
 
@@ -1359,21 +1362,14 @@ function PantallaCuenta({ estado, plantasGuardadas, nombrePlanta, onProbar }) {
       </div>
       {mensajes}
 
-      {estado === "sin-cuenta" && (
-        <button
-          type="button"
-          onClick={probar}
-          disabled={!!enviando}
-          style={{ marginTop: 26, display: "flex", alignItems: "center", gap: 12, background: "rgba(245,239,221,0.7)", border: "1px dashed #c9b98d", borderRadius: 18, padding: "14px 16px", cursor: "pointer", textAlign: "left" }}
-        >
-          <img src="/stages/s2.png" alt="" style={{ width: 40, height: 40, objectFit: "contain", flexShrink: 0 }} />
-          <span style={{ flex: 1 }}>
-            <span style={{ display: "block", fontFamily: F, fontWeight: 800, fontSize: 15, color: C.ink }}>
-              {enviando === "probar" ? "Abriendo la cámara..." : "Probar sin cuenta"}
-            </span>
-            <span style={{ display: "block", fontFamily: F, fontSize: 13, color: C.inkSoft, marginTop: 2 }}>Escanea 1 planta gratis y descubre cómo cuidarla.</span>
-          </span>
-          <span aria-hidden="true" style={{ fontSize: 18, color: C.green }}>→</span>
+      {onCerrar && (
+        <button type="button" onClick={onCerrar} style={{ ...enlace, color: C.inkSoft, fontWeight: 600, marginTop: 22, alignSelf: "center" }}>
+          Ahora no
+        </button>
+      )}
+      {estado === "sin-cuenta" && onReintentar && (
+        <button type="button" onClick={onReintentar} style={{ ...enlace, color: C.inkSoft, fontWeight: 600, marginTop: 22, alignSelf: "center" }}>
+          Usar sin cuenta
         </button>
       )}
     </div>
@@ -1801,9 +1797,16 @@ export default function BrotesApp() {
   }
 
   // ---------- Cuenta ----------
-  // cargando | sin-cuenta | prueba | anonimo | lista
+  // La app se puede usar sin cuenta (sesión anónima, solo en este celular).
+  // La cuenta se pide únicamente cuando hace falta: al reservar, al activar
+  // recordatorios y al guardar la 4ª planta.
+  //   authEstado: cargando | sin-cuenta (no se pudo abrir sin cuenta) | lista
   const [authEstado, setAuthEstado] = useState("cargando");
+  const [esAnonimo, setEsAnonimo] = useState(false);
   const [usuarioCorreo, setUsuarioCorreo] = useState("");
+  // Por qué se está pidiendo la cuenta (null = no se muestra la pantalla).
+  const [cuentaMotivo, setCuentaMotivo] = useState(null); // entrar | guardar | plantas | reservar | recordatorios
+  const LIMITE_PLANTAS_SIN_CUENTA = 3;
 
   async function reintentarCarga() {
     setGardenError(null);
@@ -1812,9 +1815,11 @@ export default function BrotesApp() {
     await aplicarSesion(data.session);
   }
 
-  // Decide qué mostrar según la sesión: pantalla de cuenta o la app.
+  // Decide qué mostrar según la sesión.
   async function aplicarSesion(session) {
     if (!session) {
+      // Sin sesión: se abre una sin cuenta en silencio, para que la persona
+      // pueda usar la app de inmediato.
       userIdRef.current = null;
       setUserId(null);
       setUsuarioCorreo("");
@@ -1822,51 +1827,55 @@ export default function BrotesApp() {
       setMisReservaciones([]);
       setSelectedPlant(null);
       setScreen("jardin");
-      setAuthEstado("sin-cuenta");
-      setLoadingGarden(false);
-      setCargandoReservaciones(false);
-      return;
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) {
+        // Si el uso sin cuenta está apagado en Supabase, se pide cuenta de entrada.
+        console.error("No se pudo abrir sesión sin cuenta:", error);
+        setAuthEstado("sin-cuenta");
+        setLoadingGarden(false);
+        setCargandoReservaciones(false);
+      }
+      return; // si funcionó, Supabase avisa SIGNED_IN y se vuelve a llamar esta función
     }
     const u = session.user;
     userIdRef.current = u.id;
     setUserId(u.id);
     setUsuarioCorreo(u.email || "");
-
-    // Sesión sin cuenta (anónima). Si todavía no escanea nada, está en su
-    // escaneo de prueba gratis; si ya escaneó, se le pide crear su cuenta y
-    // su planta se queda guardada.
-    if (u.is_anonymous) {
-      const plantas = await loadGarden(u.id);
-      setLoadingGarden(false);
-      if (plantas === 0) {
-        setAuthEstado("prueba");
-        openCamera("new");
-      } else {
-        setAuthEstado("anonimo");
-      }
-      return;
-    }
+    setEsAnonimo(!!u.is_anonymous);
     setAuthEstado("lista");
-    if (u.email) setReservaCorreo((actual) => actual || u.email);
+
+    if (!u.is_anonymous) {
+      setCuentaMotivo(null);
+      if (u.email) setReservaCorreo((actual) => actual || u.email);
+      // Si entró a mitad de algo (reservar, recordatorios...), lo retoma.
+      let pendiente = null;
+      try {
+        pendiente = sessionStorage.getItem("ambitat-despues-de-entrar");
+        sessionStorage.removeItem("ambitat-despues-de-entrar");
+      } catch {}
+      if (pendiente === "reservar") {
+        setScreen("tienda");
+        setTiendaPaso("tamano");
+      }
+    }
     await loadGarden(u.id);
     cargarReservaciones(u.id);
     setLoadingGarden(false);
   }
 
-  // Botón "Escanea una planta gratis": crea una sesión sin cuenta y abre la cámara.
-  async function empezarPrueba() {
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.user?.is_anonymous) {
-      await aplicarSesion(data.session);
-      return null;
-    }
-    const { error } = await supabase.auth.signInAnonymously();
-    return error || null; // si funcionó, SIGNED_IN abre la cámara
+  // Muestra la pantalla de cuenta explicando por qué se necesita.
+  function pedirCuenta(motivo) {
+    try {
+      sessionStorage.setItem("ambitat-despues-de-entrar", motivo);
+    } catch {}
+    setCuentaMotivo(motivo);
   }
 
-  // En la prueba, cualquier paso después del primer escaneo pide crear cuenta.
-  function pedirCuenta() {
-    setAuthEstado("anonimo");
+  function cerrarCuenta() {
+    try {
+      sessionStorage.removeItem("ambitat-despues-de-entrar");
+    } catch {}
+    setCuentaMotivo(null);
   }
 
   useEffect(() => {
@@ -1962,6 +1971,10 @@ export default function BrotesApp() {
 
   async function enableNotifications() {
     if (!userIdRef.current) return;
+    if (esAnonimo) {
+      pedirCuenta("recordatorios");
+      return;
+    }
     setNotifError(null);
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       setNotifStatus("unsupported");
@@ -1996,7 +2009,16 @@ export default function BrotesApp() {
     }
   }
 
+  // Sin cuenta se pueden cuidar hasta 3 plantas; la 4ª pide cuenta.
+  function llegoAlLimiteSinCuenta(modo) {
+    return esAnonimo && modo !== "followup" && garden.length >= LIMITE_PLANTAS_SIN_CUENTA;
+  }
+
   function openCamera(mode = "new", plantId = null) {
+    if (llegoAlLimiteSinCuenta(mode)) {
+      pedirCuenta("plantas");
+      return;
+    }
     setCaptureMode(mode);
     setFollowupPlantId(plantId);
     setError(null);
@@ -2035,6 +2057,10 @@ export default function BrotesApp() {
 
   function confirmPhotos() {
     if (photoFiles.length === 0) return;
+    if (llegoAlLimiteSinCuenta(captureMode)) {
+      pedirCuenta("plantas");
+      return;
+    }
     const mainUrl = photoUrls[0];
     setImageUrl(mainUrl);
     setScreen("analyzing");
@@ -2056,7 +2082,12 @@ export default function BrotesApp() {
       const response = await fetch("/api/analizar-planta", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ images, nombreSugerido: plantHint, faseSugerida: plantFase }),
+        body: JSON.stringify({
+          images,
+          nombreSugerido: plantHint,
+          faseSugerida: plantFase,
+          seguimientoDe: destino.modo === "followup" ? destino.plantaId : null,
+        }),
       });
       const parsed = await response.json().catch(() => ({}));
       if (!sigueVigente()) return;
@@ -2075,8 +2106,8 @@ export default function BrotesApp() {
       console.error(err);
       if (!sigueVigente()) return;
       if (err.requiereCuenta) {
-        setScreen("jardin");
-        setAuthEstado(garden.length > 0 ? "anonimo" : "sin-cuenta");
+        setScreen("camera");
+        pedirCuenta("plantas");
         return;
       }
       setError(
@@ -2207,11 +2238,12 @@ export default function BrotesApp() {
   // Sin esto, "Atrás" cerraba la app. Ahora cierra lo que esté abierto encima
   // (tip, detalle de reserva, planta) o regresa al jardín.
   const nivelAbierto = authEstado !== "lista" ? null :
-    activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
+    cuentaMotivo ? "cuenta" : activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
   const historialRef = useRef({ agregado: false, ignorarSiguiente: false });
   const cerrarRef = useRef(() => {});
   cerrarRef.current = () => {
-    if (activeTip !== null) setActiveTip(null);
+    if (cuentaMotivo) cerrarCuenta();
+    else if (activeTip !== null) setActiveTip(null);
     else if (reservaDetalle) setReservaDetalle(null);
     else if (selectedPlant) {
       setSelectedPlant(null);
@@ -2256,17 +2288,30 @@ export default function BrotesApp() {
       <style>{FONTS_IMPORT}</style>
       <IntroAnimada />
       <div className="brotes-shell">
-        {authEstado !== "lista" && authEstado !== "prueba" ? (
+        {authEstado !== "lista" ? (
           <div className="brotes-scroll">
-            <PantallaCuenta
-              estado={authEstado}
-              plantasGuardadas={garden.length}
-              nombrePlanta={garden[garden.length - 1]?.nombre_comun}
-              onProbar={empezarPrueba}
-            />
+            <PantallaCuenta estado={authEstado} esAnonimo={false} onReintentar={reintentarCarga} />
           </div>
         ) : (
         <>
+        {cuentaMotivo && (
+          <div
+            className="brotes-scroll"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Entrar a tu cuenta"
+            style={{ position: "absolute", inset: 0, zIndex: 60, background: C.gold }}
+          >
+            <PantallaCuenta
+              key={cuentaMotivo}
+              estado="lista"
+              esAnonimo={esAnonimo}
+              motivo={cuentaMotivo}
+              plantasGuardadas={garden.length}
+              onCerrar={cerrarCuenta}
+            />
+          </div>
+        )}
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
         <div className="brotes-scroll-shade" style={{ opacity: scrolled ? 1 : 0 }} />
@@ -2278,19 +2323,6 @@ export default function BrotesApp() {
             if (arriba !== scrolled) setScrolled(arriba);
           }}
         >
-        {authEstado === "prueba" && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "14px 16px 0", padding: "10px 12px 10px 14px", background: C.card, borderRadius: 16 }}>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.ink, margin: 0, lineHeight: 1.35 }}>
-              <strong>Prueba gratis:</strong> escanea 1 planta sin cuenta
-            </p>
-            <button
-              onClick={() => setAuthEstado("sin-cuenta")}
-              style={{ flexShrink: 0, background: "none", border: "1px solid " + C.cardLine, borderRadius: 999, padding: "8px 12px", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: C.green, cursor: "pointer" }}
-            >
-              Iniciar sesión
-            </button>
-          </div>
-        )}
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -2521,21 +2553,20 @@ export default function BrotesApp() {
                       </button>
                     </div>
                   )}
-                  {isSaved && !isSaving && authEstado === "prueba" && (
-                    <div style={{ marginTop: 14, background: C.green, borderRadius: 18, padding: "16px 16px", color: "#fff" }}>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 16, margin: 0 }}>¿Te gustó? Guarda tu planta</p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, margin: "4px 0 12px", opacity: 0.9, lineHeight: 1.4 }}>
-                        Crea tu cuenta gratis para recibir recordatorios de riego, seguir su evolución y escanear todas las plantas que quieras.
+                  {isSaved && !isSaving && esAnonimo && captureMode !== "followup" && (
+                    <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, background: "rgba(63,93,62,0.08)", borderRadius: 14, padding: "10px 12px" }}>
+                      <p style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.ink, margin: 0, lineHeight: 1.4 }}>
+                        Guardada en este celular. Entra gratis para no perderla.
                       </p>
                       <button
-                        onClick={pedirCuenta}
-                        style={{ width: "100%", padding: "13px 0", borderRadius: 999, border: "none", background: C.cream, color: C.green, fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, cursor: "pointer" }}
+                        onClick={() => pedirCuenta("guardar")}
+                        style={{ flexShrink: 0, padding: "8px 12px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}
                       >
-                        Crear mi cuenta gratis
+                        Guardar
                       </button>
                     </div>
                   )}
-                  {isSaved && !isSaving && authEstado !== "prueba" && (
+                  {isSaved && !isSaving && (
                     <button
                       onClick={() => {
                         if (captureMode === "followup") setSelectedPlant(followupPlantId);
@@ -2562,7 +2593,7 @@ export default function BrotesApp() {
               }
             />
             <button
-              onClick={() => (authEstado === "prueba" && isSaved ? pedirCuenta() : openCamera(captureMode, followupPlantId))}
+              onClick={() => openCamera(captureMode, followupPlantId)}
               style={{ background: "transparent", border: "none", color: C.inkSoft, fontSize: 13, cursor: "pointer", padding: "14px 4px", fontFamily: "'Inter', sans-serif", fontWeight: 600 }}
             >
               ← Analizar otra foto
@@ -2617,13 +2648,22 @@ export default function BrotesApp() {
                   {notifStatus === "subscribed" && (
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.green }}>🔔</span>
                   )}
-                  <button
-                    onClick={() => setScreen("cuenta")}
-                    style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -5, opacity: 0.8, display: "flex", alignItems: "center", justifyContent: "center" }}
-                    aria-label="Mi cuenta"
-                  >
-                    <Icon.User style={{ width: 19, height: 19 }} />
-                  </button>
+                  {esAnonimo ? (
+                    <button
+                      onClick={() => pedirCuenta("entrar")}
+                      style={{ background: C.green, border: "none", color: "#fff", cursor: "pointer", padding: "8px 14px", borderRadius: 999, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13 }}
+                    >
+                      Entrar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setScreen("cuenta")}
+                      style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -5, opacity: 0.8, display: "flex", alignItems: "center", justifyContent: "center" }}
+                      aria-label="Mi cuenta"
+                    >
+                      <Icon.User style={{ width: 19, height: 19 }} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setScreen("sugerencias")}
                     style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 9, margin: -5, opacity: 0.7, display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -2635,6 +2675,21 @@ export default function BrotesApp() {
               </div>
               {notifError && (
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.red, margin: "8px 0 0" }}>{notifError}</p>
+              )}
+              {esAnonimo && garden.length > 0 && (
+                <button
+                  onClick={() => pedirCuenta("guardar")}
+                  style={{ marginTop: 14, width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.card, border: "none", borderRadius: 16, padding: "11px 14px", cursor: "pointer", textAlign: "left" }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 18 }}>☁️</span>
+                  <span style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.ink, lineHeight: 1.35 }}>
+                    <strong>Guarda tu jardín.</strong>{" "}
+                    {garden.length >= LIMITE_PLANTAS_SIN_CUENTA
+                      ? "Llegaste a 3 plantas sin cuenta; entra para agregar más."
+                      : `Tus plantas solo viven en este celular (${garden.length} de ${LIMITE_PLANTAS_SIN_CUENTA}).`}
+                  </span>
+                  <span aria-hidden="true" style={{ color: C.green, fontWeight: 700 }}>→</span>
+                </button>
               )}
 
               <div style={{ display: "flex", gap: 12, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px", alignItems: "stretch" }}>
@@ -3339,7 +3394,7 @@ export default function BrotesApp() {
                   {/* ---- Paso 1 ---- */}
                   {tiendaPaso === "inicio" && (
                     <>
-                      {botonPrincipal("Reservar", () => setTiendaPaso("tamano"), false)}
+                      {botonPrincipal("Reservar", () => (esAnonimo ? pedirCuenta("reservar") : setTiendaPaso("tamano")), false)}
                       <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
                         Puedes pagar con tarjeta o en efectivo en OXXO.
                       </p>

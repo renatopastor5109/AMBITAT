@@ -1361,6 +1361,11 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
         </button>
       </div>
       {mensajes}
+      <p style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, textAlign: "center", margin: "18px 0 0", lineHeight: 1.5 }}>
+        Al continuar aceptas los{" "}
+        <a href="/terminos" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Términos</a> y el{" "}
+        <a href="/privacidad" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Aviso de privacidad</a>.
+      </p>
 
       {onCerrar && (
         <button type="button" onClick={onCerrar} style={{ ...enlace, color: C.inkSoft, fontWeight: 600, marginTop: 22, alignSelf: "center" }}>
@@ -3091,6 +3096,11 @@ export default function BrotesApp() {
                 Cerrar sesión
               </button>
             </div>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, textAlign: "center", margin: "18px 0 0", lineHeight: 1.6 }}>
+              <a href="/terminos" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Términos y condiciones</a>
+              {" · "}
+              <a href="/privacidad" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Aviso de privacidad</a>
+            </p>
           </div>
         )}
 
@@ -3549,7 +3559,11 @@ export default function BrotesApp() {
                         reservando
                       )}
                       <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
-                        Puedes pagar con tarjeta o en efectivo en OXXO.
+                        Puedes pagar con tarjeta o en efectivo en OXXO. Al pagar aceptas los{" "}
+                        <a href="/terminos#s8" target="_blank" rel="noopener" style={{ color: C.green, fontWeight: 700 }}>
+                          términos del servicio
+                        </a>{" "}
+                        (incluye cancelaciones y reembolsos).
                       </p>
                     </>
                   )}

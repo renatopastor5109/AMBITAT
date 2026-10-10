@@ -7,7 +7,7 @@
 // como pagada.
 import Stripe from "stripe";
 import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
-import { obtenerHorasOcupadas } from "../../lib/horariosOcupados";
+import { obtenerHorasOcupadas, horaGanadaPorOtra, apartaHorario } from "../../lib/horariosOcupados";
 import { tamanoPorClave, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
 import { diaCDMX, diasEntre, esFechaValida, esFinDeSemana } from "../../lib/fechas";
 
@@ -49,7 +49,9 @@ export default async function handler(req, res) {
   if (!esFechaValida(fecha)) return res.status(400).json({ error: "Fecha inválida." });
   if (!esFinDeSemana(fecha)) return res.status(400).json({ error: "El mantenimiento solo se agenda en sábado o domingo." });
   const diasFaltan = diasEntre(diaCDMX(), fecha);
-  if (diasFaltan < 0) return res.status(400).json({ error: "Esa fecha ya pasó." });
+  // Se reserva con al menos un día de anticipación (así nunca se cobra una
+  // hora de hoy que ya pasó, y hay tiempo de preparar la visita).
+  if (diasFaltan < 1) return res.status(400).json({ error: "Reserva a partir de mañana." });
   if (diasFaltan > DIAS_MAXIMOS_ANTICIPACION) {
     return res.status(400).json({ error: `Solo se puede reservar con hasta ${DIAS_MAXIMOS_ANTICIPACION} días de anticipación.` });
   }
@@ -58,6 +60,18 @@ export default async function handler(req, res) {
   const admin = clienteAdmin();
 
   try {
+    // Máximo 3 reservaciones pendientes de pago a la vez por persona, para que
+    // nadie pueda apartar todos los horarios sin pagar.
+    const { data: pendientes, error: pendError } = await admin
+      .from("reservaciones")
+      .select("id, estado, metodo_pago, created_at")
+      .eq("user_id", usuario.id)
+      .eq("estado", "pendiente_pago");
+    if (pendError) throw pendError;
+    if ((pendientes || []).filter((r) => apartaHorario(r)).length >= 3) {
+      return res.status(429).json({ error: "Tienes reservaciones esperando pago. Págalas o espera a que venzan para reservar otra." });
+    }
+
     const ocupadas = await obtenerHorasOcupadas(admin, fecha);
     if (ocupadas.includes(hora)) {
       return res.status(409).json({ error: "Ese horario se acaba de ocupar. Elige otra hora." });
@@ -91,15 +105,23 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "No pudimos guardar tu reservación. Intenta de nuevo." });
     }
 
+    // Si otra persona apartó la misma hora en el mismo instante, gana la primera.
+    if (await horaGanadaPorOtra(admin, reservacion)) {
+      await admin.from("reservaciones").update({ estado: "cancelado" }).eq("id", reservacion.id);
+      return res.status(409).json({ error: "Ese horario se acaba de ocupar. Elige otra hora." });
+    }
+
     // ---------- Sesión de pago en Stripe ----------
     try {
       const stripe = new Stripe(stripeKey);
-      const origin = `https://${req.headers.host}`;
+      const origin = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         payment_method_types: ["card", "oxxo"],
-        // El voucher de OXXO vence en 2 días; el horario se aparta 3 días
-        // (lib/horariosOcupados.js), así nunca se libera antes de que venza.
+        // La página de pago vence en 30 min (lo mínimo que permite Stripe) para
+        // que los pagos abandonados liberen el horario rápido. La ficha de
+        // OXXO dura 2 días y el horario se le aparta 5 (lib/horariosOcupados.js).
+        expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
         payment_method_options: { oxxo: { expires_after_days: 2 } },
         customer_email: correo,
         line_items: [
@@ -122,7 +144,15 @@ export default async function handler(req, res) {
         cancel_url: `${origin}/?pago=cancelado`,
       });
 
-      await admin.from("reservaciones").update({ stripe_session_id: session.id }).eq("id", reservacion.id);
+      const { error: guardarSesionError } = await admin
+        .from("reservaciones")
+        .update({ stripe_session_id: session.id })
+        .eq("id", reservacion.id);
+      if (guardarSesionError) {
+        // Sin el número de sesión no podríamos confirmar el pago: mejor no cobrar.
+        await stripe.checkout.sessions.expire(session.id).catch(() => {});
+        throw guardarSesionError;
+      }
       return res.status(200).json({ url: session.url });
     } catch (stripeErr) {
       console.error("Error de Stripe:", stripeErr);

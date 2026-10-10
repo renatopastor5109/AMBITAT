@@ -115,7 +115,9 @@ export default function Admin() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo actualizar");
-      setReservaciones((prev) => prev.map((r) => (r.id === id ? { ...r, estado } : r)));
+      setReservaciones((prev) =>
+        prev.map((r) => (r.id !== id ? r : estado === "reembolso_depositado" ? { ...r, reembolso_estado: "depositado" } : { ...r, estado }))
+      );
     } catch (err) {
       alert(err.message);
     }
@@ -141,6 +143,7 @@ export default function Admin() {
       proximas: confirmadas.filter((r) => r.fecha >= hoy).length,
       pendientes: reservaciones.filter((r) => r.estado === "pendiente_pago" && r.fecha >= hoy).length,
       conflictos: reservaciones.filter((r) => r.estado === "conflicto").length,
+      depositos: reservaciones.filter((r) => r.reembolso_estado === "pendiente_manual").length,
       cobrado: reservaciones
         .filter((r) => r.estado === "pagado" || r.estado === "completado")
         .reduce((s, r) => s + (r.precio_centavos || 0), 0),
@@ -233,6 +236,13 @@ export default function Admin() {
               <div style={{ background: C.red, color: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, lineHeight: 1.4 }}>
                 <strong>{resumen.conflictos === 1 ? "1 cita pagó" : `${resumen.conflictos} citas pagaron`} un horario que ya estaba ocupado</strong>{" "}
                 (normalmente un pago en OXXO que llegó tarde). Escríbele al cliente para cambiar el horario o hazle el reembolso desde Stripe.
+              </div>
+            )}
+
+            {resumen.depositos > 0 && (
+              <div style={{ background: C.amber, color: C.ink, borderRadius: 14, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, lineHeight: 1.4 }}>
+                <strong>{resumen.depositos === 1 ? "1 cliente canceló" : `${resumen.depositos} clientes cancelaron`} y pagó en OXXO:</strong>{" "}
+                hay que depositarle a mano. Búscalo en Historial (dice “DEPOSÍTALE”).
               </div>
             )}
 
@@ -615,6 +625,26 @@ function Cita({ r, actualizando, onCambiarEstado }) {
           {tamanoPorClave(r.tamano) ? `Jardín ${tamanoPorClave(r.tamano).nombre.toLowerCase()} · ` : ""}
           ${(r.precio_centavos / 100).toFixed(0)} MXN{r.metodo_pago ? ` · ${r.metodo_pago === "oxxo" ? "OXXO" : "Tarjeta"}` : ""}
         </p>
+        {r.reembolso_estado && (
+          <p style={{ fontSize: 12.5, fontWeight: 700, margin: 0, color: r.reembolso_estado === "pendiente_manual" ? C.red : C.inkSoft }}>
+            {r.reembolso_estado === "hecho"
+              ? `Cancelada por el cliente · se le devolvieron $${((r.reembolso_centavos || 0) / 100).toFixed(0)} a su tarjeta`
+              : r.reembolso_estado === "pendiente_manual"
+              ? `Cancelada por el cliente · DEPOSÍTALE $${((r.reembolso_centavos || 0) / 100).toFixed(0)} (pagó en OXXO)`
+              : r.reembolso_estado === "depositado"
+              ? `Cancelada por el cliente · ya se le depositaron $${((r.reembolso_centavos || 0) / 100).toFixed(0)}`
+              : "Cancelada por el cliente · sin reembolso"}
+          </p>
+        )}
+        {r.reembolso_estado === "pendiente_manual" && (
+          <button
+            onClick={() => window.confirm("¿Ya le depositaste a este cliente?") && onCambiarEstado(r.id, "reembolso_depositado")}
+            disabled={actualizando}
+            style={{ alignSelf: "flex-start", marginTop: 4, padding: "8px 12px", borderRadius: 10, border: "none", background: C.green, color: "#fff", fontFamily: F, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}
+          >
+            {actualizando ? "..." : "Ya le deposité"}
+          </button>
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>

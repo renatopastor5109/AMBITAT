@@ -1,6 +1,6 @@
 // Regresa solo las HORAS ocupadas de una fecha (sin nombres ni direcciones de
 // otros clientes), para que el formulario de reserva no las ofrezca.
-import { createClient } from "@supabase/supabase-js";
+import { clienteAdmin } from "../../lib/usuarioServidor";
 import { obtenerHorasOcupadas } from "../../lib/horariosOcupados";
 
 export default async function handler(req, res) {
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const admin = clienteAdmin();
     const ocupadas = await obtenerHorasOcupadas(admin, fecha);
     return res.status(200).json({ ocupadas });
   } catch (err) {

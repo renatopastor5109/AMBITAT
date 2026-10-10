@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
-import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES } from "../lib/servicio";
-import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto } from "../lib/fechas";
+import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../lib/servicio";
+import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto, diasDesdeRiego, sumarDias, diaSemana } from "../lib/fechas";
+import { politicaCancelacion, puedeCambiarFecha } from "../lib/politicaCancelacion";
 import { tipsDelDia } from "../lib/tips";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
@@ -93,6 +94,25 @@ html, body {
   position: relative;
   overflow: hidden;
 }
+/* Siluetas grises mientras algo carga */
+.brotes-esqueleto {
+  background: linear-gradient(90deg, #EFE6CC 25%, #f7f1e1 50%, #EFE6CC 75%);
+  background-size: 200% 100%;
+  animation: brotesEsqueleto 1.3s ease-in-out infinite;
+}
+@keyframes brotesEsqueleto { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .brotes-esqueleto { animation: none; } }
+/* Fila de fechas que se desliza de lado */
+.brotes-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+  margin: 0 -2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.brotes-chips::-webkit-scrollbar { display: none; }
 /* Solo esta zona se desplaza; la barra de pestañas se queda fija abajo */
 .brotes-scroll {
   flex: 1;
@@ -289,6 +309,44 @@ html, body {
 }
 `;
 
+// Fecha de una entrada del historial (las viejas solo traen dateISO o date).
+function fechaHistorial(h) {
+  if (h?.date) return h.date;
+  const iso = h?.dateISO || h?.fecha;
+  return iso ? new Date(iso).toLocaleDateString("es-MX") : "";
+}
+
+// Estilos compartidos del formulario de reserva.
+const estiloCampo = { border: "1px solid #e2d7b8", borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: "#221C13", background: "#EFE6CC" };
+const etiquetaCampo = { fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: "#6b6047", margin: "4px 0 -2px 2px" };
+function chip(activo) {
+  return {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+    minHeight: 40,
+    padding: "8px 14px",
+    borderRadius: 12,
+    border: activo ? "2px solid #3F5D3E" : "1px solid #e2d7b8",
+    background: activo ? "#3F5D3E" : "#EFE6CC",
+    color: activo ? "#fff" : "#221C13",
+    fontFamily: "'Inter', sans-serif",
+    fontSize: 13.5,
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+}
+
+// iPhone/iPad en el navegador (no instalada en la pantalla de inicio).
+function esIOSSinInstalar() {
+  if (typeof navigator === "undefined") return false;
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const instalada = window.navigator.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches;
+  return ios && !instalada;
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -333,9 +391,9 @@ async function tokenSesion() {
 // Calcula cuánto falta (o si ya se pasó) para el próximo riego, contando
 // días de calendario en hora de CDMX desde la última foto guardada.
 function getWateringStatus(plant) {
-  const remaining = diasParaRiego(plant?.dias_entre_riegos, plant?.history);
+  const remaining = diasParaRiego(plant?.dias_entre_riegos, plant?.history, plant?.ultimo_riego);
   if (remaining === null) return null;
-  if (remaining < 0) return { label: "Necesita agua", urgent: true, late: true, remaining };
+  if (remaining < 0) return { label: "Necesita agua", corto: "Atrasado", urgent: true, late: true, remaining };
   if (remaining === 0) return { label: "Riega hoy", urgent: true, late: false, remaining };
   if (remaining === 1) return { label: "Riega mañana", urgent: false, late: false, remaining };
   return { label: `Riega en ${remaining} días`, urgent: false, late: false, remaining };
@@ -570,7 +628,7 @@ function PlantCard({ data, imageUrl, footer, compact, nameEdit }) {
                   <Icon.Droplet style={{ color: C.blue }} />
                 </div>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 17, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
-                  {watering ? watering.label.replace(/^Riega\s*/i, "").replace(/^Necesita agua$/i, "Hoy") : "—"}
+                  {watering ? watering.corto || watering.label.replace(/^Riega\s*/i, "") : "—"}
                 </p>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "1px 0 0" }}>Próximo riego</p>
               </div>
@@ -987,23 +1045,19 @@ function IntroAnimada() {
   );
 }
 
-// ---------- Pantalla de cuenta: crear cuenta, iniciar sesión, contraseña ----------
+// ---------- Pantalla de cuenta (Google / Apple / Facebook / código por correo) ----------
 // Traduce los errores de Supabase (vienen en inglés) a algo entendible.
 function errorDeCuenta(err) {
   const m = (err?.message || "").toLowerCase();
   if (m.includes("token") && (m.includes("expired") || m.includes("invalid"))) return "Ese código no es correcto o ya venció. Revísalo o pide uno nuevo.";
-  if (m.includes("invalid login credentials")) return "Correo o contraseña incorrectos.";
   if (m.includes("already registered") || m.includes("already been registered") || m.includes("already exists"))
-    return "Ya existe una cuenta con ese correo. Inicia sesión.";
-  if (m.includes("email not confirmed")) return "Primero confirma tu correo: revisa tu bandeja de entrada (y spam).";
-  if (m.includes("password") && (m.includes("least") || m.includes("short") || m.includes("weak")))
-    return "La contraseña es muy corta o muy fácil. Usa al menos 8 caracteres.";
-  if (m.includes("same") && m.includes("password")) return "La nueva contraseña debe ser distinta a la anterior.";
+    return "Ya existe una cuenta con ese correo.";
   if (m.includes("rate limit") || m.includes("too many") || m.includes("security purposes"))
     return "Demasiados intentos seguidos. Espera unos minutos e intenta de nuevo.";
   if (m.includes("not authorized") || m.includes("sending") || m.includes("smtp"))
     return "No pudimos enviarte el correo. Intenta más tarde o escríbenos.";
   if (m.includes("anonymous") && m.includes("disabled")) return "Por ahora necesitas una cuenta para usar Ámbitat. Entra con Google o con tu correo.";
+  if (m.includes("anonymous")) return "No pudimos abrir la app sin cuenta en este momento. Entra con Google o con tu correo.";
   if (m.includes("provider is not enabled") || m.includes("unsupported provider")) return "Esa opción todavía no está disponible. Usa otra.";
   if (m.includes("invalid") && m.includes("email")) return "Revisa que el correo esté bien escrito.";
   if (m.includes("fetch") || m.includes("network")) return "Sin conexión. Revisa tu internet.";
@@ -1026,7 +1080,10 @@ function leerErrorDeEnlace() {
     return { tipo: "correo", mensaje: "Ese enlace ya no sirve: ya se usó o expiró (solo funciona el último correo que te mandamos). Pide uno nuevo abajo." };
   }
   if (descripcion.includes("already") && (descripcion.includes("linked") || descripcion.includes("exists"))) {
-    return { tipo: "social", mensaje: "Esa cuenta ya está registrada en Ámbitat. Toca \"Ya tengo cuenta\" y entra con ella." };
+    return {
+      tipo: "ya-existe",
+      mensaje: "Esa cuenta ya está registrada en Ámbitat. Toca otra vez el botón para entrar a ella (las plantas guardadas solo en este celular no se pasan).",
+    };
   }
   return { tipo: "social", mensaje: "No se completó el inicio de sesión. Intenta de nuevo." };
 }
@@ -1095,13 +1152,15 @@ const MOTIVOS_CUENTA = {
   recordatorios: { titulo: "Entra para recibir recordatorios", subtitulo: "Así te avisamos cuándo regar aunque cambies de celular." },
 };
 
-function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar, onReintentar }) {
-  const [errorEnlace] = useState(leerErrorDeEnlace);
+function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar, onReintentar, errorInicial }) {
+  const errorEnlace = errorInicial;
+  // Si la cuenta de Google/correo ya existía, se entra a ella en vez de vincularla.
+  const entrarDirecto = errorEnlace?.tipo === "ya-existe";
   const activos = useProveedoresActivos();
   const [paso, setPaso] = useState(errorEnlace?.tipo === "correo" ? "correo" : "opciones"); // opciones | correo | codigo
   const [correo, setCorreo] = useState("");
   const [codigo, setCodigo] = useState("");
-  const [tipoCodigo, setTipoCodigo] = useState("email"); // email | email_change (cuenta de prueba que guarda su planta)
+  const [tipoCodigo, setTipoCodigo] = useState("email"); // email | email_change (quien usaba la app sin cuenta guarda su jardín)
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(errorEnlace?.mensaje || null);
   const [aviso, setAviso] = useState(null);
@@ -1141,11 +1200,19 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
     }
     setEnviando(proveedor);
     const options = { redirectTo: origen };
-    // Si viene de la prueba gratis, se "vincula" para que su planta no se pierda.
-    let { error } = esAnonimo
+    // Si ya usaba la app sin cuenta, se "vincula" para que sus plantas no se pierdan.
+    const vincular = esAnonimo && !entrarDirecto;
+    let { error } = vincular
       ? await supabase.auth.linkIdentity({ provider: proveedor, options })
       : await supabase.auth.signInWithOAuth({ provider: proveedor, options });
-    if (error && esAnonimo) ({ error } = await supabase.auth.signInWithOAuth({ provider: proveedor, options }));
+    if (error && vincular) {
+      // No se pudo vincular (p. ej. "Allow manual linking" apagado en Supabase).
+      if (plantasGuardadas > 0 && !window.confirm("No pudimos pasar tus plantas a tu cuenta. ¿Entrar de todos modos? Las plantas guardadas solo en este celular no se pasarán.")) {
+        setEnviando(false);
+        return;
+      }
+      ({ error } = await supabase.auth.signInWithOAuth({ provider: proveedor, options }));
+    }
     if (error) {
       setEnviando(false);
       setError(errorDeCuenta(error));
@@ -1165,11 +1232,15 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
     let tipo = "email";
     let error = null;
     if (esAnonimo) {
-      // Se le pone el correo a la sesión de prueba, así su planta se queda.
+      // Se le pone el correo a la sesión sin cuenta, así sus plantas se quedan.
       ({ error } = await supabase.auth.updateUser({ email: mail }, { emailRedirectTo: origen }));
       tipo = "email_change";
       if (error && /already|registered|exists/i.test(error.message || "")) {
-        // Ese correo ya tiene cuenta: entra a esa cuenta (la planta de prueba no se pasa).
+        // Ese correo ya tiene cuenta: se entra a esa cuenta (las plantas de este celular no se pasan).
+        if (plantasGuardadas > 0 && !window.confirm("Ese correo ya tiene una cuenta en Ámbitat. ¿Entrar a ella? Las plantas guardadas solo en este celular no se pasarán.")) {
+          setEnviando(false);
+          return;
+        }
         ({ error } = await supabase.auth.signInWithOtp({ email: mail, options: { emailRedirectTo: origen } }));
         tipo = "email";
       }
@@ -1381,6 +1452,533 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
   );
 }
 
+// ---------- Ficha de cuidado ----------
+const TOX_INFO = {
+  toxica: { color: "#9C3B2E", bg: "rgba(156,59,46,0.1)", icono: "⚠️", texto: "Tóxica" },
+  levemente_toxica: { color: "#8a6110", bg: "rgba(214,162,61,0.16)", icono: "⚠️", texto: "Levemente tóxica" },
+  no_toxica: { color: "#3F5D3E", bg: "rgba(63,93,62,0.1)", icono: "✓", texto: "No tóxica" },
+  desconocida: { color: "#6b6047", bg: "#EFE6CC", icono: "?", texto: "Sin datos seguros" },
+};
+const DIFICULTAD_TEXTO = { facil: "Fácil de cuidar", media: "Cuidado medio", dificil: "Requiere experiencia" };
+
+function FichaCuidado({ ficha, cargando, error, onReintentar }) {
+  const F = "'Inter', sans-serif";
+  const caja = { marginTop: 18, background: C.card, borderRadius: 22, padding: "18px 18px 8px", boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 28px -14px rgba(0,0,0,0.18)" };
+  if (!ficha) {
+    return (
+      <div style={{ ...caja, paddingBottom: 18 }}>
+        <Tag>Ficha de cuidado</Tag>
+        {error ? (
+          <div style={{ marginTop: 10 }}>
+            <p style={{ fontFamily: F, fontSize: 13, color: C.red, margin: "0 0 10px" }}>{error}</p>
+            <button onClick={onReintentar} style={{ background: C.tileBg, border: "none", borderRadius: 10, padding: "9px 16px", fontFamily: F, fontWeight: 700, fontSize: 13, color: C.ink, cursor: "pointer" }}>
+              Reintentar
+            </button>
+          </div>
+        ) : (
+          <div aria-busy={cargando ? "true" : "false"} style={{ marginTop: 12 }}>
+            <p style={{ fontFamily: F, fontSize: 13, color: C.inkSoft, margin: "0 0 10px" }}>Preparando la ficha de tu planta...</p>
+            {[80, 65, 90].map((w, i) => (
+              <div key={i} className="brotes-esqueleto" style={{ height: 12, width: `${w}%`, borderRadius: 6, marginBottom: 10 }} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  const masc = TOX_INFO[ficha.toxicidad?.mascotas] || TOX_INFO.desconocida;
+  const pers = TOX_INFO[ficha.toxicidad?.personas] || TOX_INFO.desconocida;
+  const filas = [
+    ["☀️", "Luz", ficha.luz],
+    ["💧", "Riego", ficha.riego],
+    ["🌫️", "Humedad", ficha.humedad],
+    ["🌡️", "Temperatura", ficha.temperatura],
+    ["🪴", "Sustrato", ficha.sustrato],
+    ["🌱", "Abono", ficha.abono],
+    ["✂️", "Poda", ficha.poda],
+  ].filter((f) => f[2]);
+  return (
+    <div style={caja}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <Tag>Ficha de cuidado</Tag>
+        {ficha.dificultad && (
+          <span style={{ fontFamily: F, fontSize: 11.5, fontWeight: 700, color: C.inkSoft, background: C.tileBg, borderRadius: 999, padding: "4px 10px" }}>
+            {DIFICULTAD_TEXTO[ficha.dificultad]}
+          </span>
+        )}
+      </div>
+      {/* Toxicidad, lo más importante primero */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+        {[
+          ["🐾 Mascotas", masc],
+          ["👶 Personas", pers],
+        ].map(([quien, t]) => (
+          <div key={quien} style={{ background: t.bg, borderRadius: 14, padding: "10px 12px" }}>
+            <p style={{ fontFamily: F, fontSize: 11.5, color: C.inkSoft, margin: 0, fontWeight: 600 }}>{quien}</p>
+            <p style={{ fontFamily: F, fontSize: 14, fontWeight: 800, color: t.color, margin: "2px 0 0" }}>
+              {t.icono} {t.texto}
+            </p>
+          </div>
+        ))}
+      </div>
+      {ficha.toxicidad?.detalle && (
+        <p style={{ fontFamily: F, fontSize: 12.5, color: C.ink, margin: "8px 2px 0", lineHeight: 1.45 }}>{ficha.toxicidad.detalle}</p>
+      )}
+      <p style={{ fontFamily: F, fontSize: 11, color: C.inkSoft, margin: "6px 2px 6px", lineHeight: 1.4 }}>
+        Información general. Si un niño o una mascota se la come, llama a tu médico o veterinario.
+      </p>
+      <div style={{ marginTop: 4 }}>
+        {filas.map(([ico, label, txt]) => (
+          <DetailRow key={label} icon={<span aria-hidden="true" style={{ fontSize: 14 }}>{ico}</span>} label={label} text={txt} />
+        ))}
+      </div>
+      {ficha.plagas?.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ fontFamily: F, fontSize: 12, fontWeight: 700, color: C.inkSoft, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: "0.03em" }}>Plagas comunes</p>
+          {ficha.plagas.map((p, i) => (
+            <p key={i} style={{ fontFamily: F, fontSize: 13, color: C.ink, margin: "0 0 6px", lineHeight: 1.4 }}>🐛 {p}</p>
+          ))}
+        </div>
+      )}
+      {ficha.dato_extra && (
+        <div style={{ margin: "12px 0 10px", background: C.tileBg, borderRadius: 14, padding: "10px 12px", display: "flex", gap: 8 }}>
+          <Icon.Sparkle style={{ color: C.green, flexShrink: 0, marginTop: 2 }} />
+          <p style={{ fontFamily: F, fontSize: 13, color: C.ink, margin: 0, lineHeight: 1.45 }}>{ficha.dato_extra}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Botón "Ya la regué" ----------
+function BotonRegar({ plant, regadaHoy, guardando, onRegar, chico }) {
+  const F = "'Inter', sans-serif";
+  const estado = getWateringStatus(plant);
+  const urgente = !!estado?.urgent;
+  if (regadaHoy) {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          width: chico ? "auto" : "100%",
+          minHeight: chico ? 34 : 48,
+          padding: chico ? "0 12px" : 0,
+          borderRadius: chico ? 999 : 14,
+          background: "rgba(62,124,166,0.1)",
+          color: C.blue,
+          fontFamily: F,
+          fontWeight: 700,
+          fontSize: chico ? 12.5 : 14,
+          flexShrink: 0,
+        }}
+      >
+        <Icon.Check style={{ width: 15, height: 15 }} /> Regada hoy
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onRegar(plant);
+      }}
+      disabled={guardando}
+      aria-label={`Ya regué ${plant.nombre_comun || "esta planta"}`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        width: chico ? "auto" : "100%",
+        minHeight: chico ? 34 : 48,
+        padding: chico ? "0 12px" : 0,
+        borderRadius: chico ? 999 : 14,
+        border: urgente || chico ? "none" : "1px solid " + C.cardLine,
+        background: urgente || chico ? C.blue : "transparent",
+        color: urgente || chico ? "#fff" : C.blue,
+        fontFamily: F,
+        fontWeight: 700,
+        fontSize: chico ? 12.5 : 14,
+        cursor: "pointer",
+        opacity: guardando ? 0.6 : 1,
+        flexShrink: 0,
+      }}
+    >
+      <Icon.Droplet style={{ width: 15, height: 15, color: "currentColor" }} />
+      {guardando ? "Guardando..." : "Ya la regué"}
+    </button>
+  );
+}
+
+// ---------- "Hoy en tu jardín" ----------
+// Lista corta de lo que hay que hacer hoy: regar, revisar plantas en riesgo,
+// fotos de seguimiento pendientes y la próxima cita de mantenimiento.
+function pendientesDeHoy(garden, reservaciones) {
+  const tareas = [];
+  garden.forEach((p) => {
+    const w = getWateringStatus(p);
+    if (w?.urgent) {
+      tareas.push({
+        tipo: "regar",
+        planta: p,
+        orden: w.late ? 0 : 1,
+        titulo: `Regar ${p.nombre_comun || "planta"}`,
+        detalle: w.late ? (w.remaining === -1 ? "Le tocaba ayer" : `Le tocaba hace ${-w.remaining} días`) : "Le toca hoy",
+      });
+    }
+  });
+  garden.forEach((p) => {
+    if (p.estado_general === "critico") {
+      tareas.push({ tipo: "revisar", planta: p, orden: 2, titulo: `Revisar ${p.nombre_comun || "planta"}`, detalle: "Está en riesgo: mira qué necesita" });
+    }
+  });
+  garden.forEach((p) => {
+    const d = diasDesdeUltimaFoto(p.history);
+    if (d !== null && d >= 14 && p.estado_general !== "critico") {
+      tareas.push({ tipo: "foto", planta: p, orden: 3, titulo: `Foto de ${p.nombre_comun || "planta"}`, detalle: `Su última foto fue hace ${d} días` });
+    }
+  });
+  const hoy = diaCDMX();
+  const cita = (reservaciones || [])
+    .filter((r) => r.estado === "pagado" && r.fecha >= hoy && diasEntre(hoy, r.fecha) <= 7)
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : 1))[0];
+  if (cita) {
+    const dias = diasEntre(hoy, cita.fecha);
+    const cuando = dias === 0 ? "Hoy" : dias === 1 ? "Mañana" : new Date(cita.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long" });
+    tareas.push({ tipo: "cita", reservacion: cita, orden: -1, titulo: "Mantenimiento a domicilio", detalle: `${cuando.charAt(0).toUpperCase() + cuando.slice(1)} a las ${cita.hora}` });
+  }
+  return tareas.sort((a, b) => a.orden - b.orden);
+}
+
+function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onAbrirPlanta, onFoto, onAbrirCita }) {
+  const [verTodo, setVerTodo] = useState(false);
+  if (garden.length === 0) return null;
+  const F = "'Inter', sans-serif";
+  const tareas = pendientesDeHoy(garden, reservaciones);
+  const visibles = verTodo ? tareas : tareas.slice(0, 4);
+  const manana = garden.filter((p) => getWateringStatus(p)?.remaining === 1);
+  const fecha = new Date().toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Mexico_City" });
+  const ICONO = { regar: "💧", revisar: "🩺", foto: "📸", cita: "🧑‍🌾" };
+  return (
+    <section aria-label="Hoy en tu jardín" style={{ marginTop: 16, background: C.card, borderRadius: 22, padding: "16px 16px 8px", boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 28px -14px rgba(0,0,0,0.18)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <p style={{ fontFamily: F, fontWeight: 800, fontSize: 18, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>Hoy</p>
+        <p style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, margin: 0 }}>{fecha.charAt(0).toUpperCase() + fecha.slice(1)}</p>
+      </div>
+      {tareas.length === 0 ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0 10px" }}>
+          <span aria-hidden="true" style={{ fontSize: 24 }}>🌿</span>
+          <p style={{ fontFamily: F, fontSize: 13.5, color: C.ink, margin: 0, lineHeight: 1.4 }}>
+            <strong>Todo al día.</strong>{" "}
+            {manana.length > 0
+              ? `Mañana toca regar ${manana.slice(0, 2).map((p) => p.nombre_comun).join(" y ")}${manana.length > 2 ? ` y ${manana.length - 2} más` : ""}.`
+              : "No hay nada pendiente por ahora."}
+          </p>
+        </div>
+      ) : (
+        <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0 }}>
+          {visibles.map((t, i) => {
+            const abrir = () => (t.tipo === "cita" ? onAbrirCita(t.reservacion) : t.tipo === "foto" ? onFoto(t.planta) : onAbrirPlanta(t.planta));
+            return (
+              <li key={t.tipo + (t.planta?.id || t.reservacion?.id) + i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i === 0 ? "none" : "1px solid " + C.cardLine }}>
+                <button
+                  onClick={abrir}
+                  style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+                >
+                  {t.planta?.imageUrl ? (
+                    <img src={t.planta.imageUrl} alt="" style={{ width: 38, height: 38, borderRadius: 11, objectFit: "cover", flexShrink: 0 }} />
+                  ) : (
+                    <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 11, background: C.tileBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                      {ICONO[t.tipo]}
+                    </span>
+                  )}
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {t.planta?.imageUrl ? `${ICONO[t.tipo]} ` : ""}
+                      {t.titulo}
+                    </span>
+                    <span style={{ display: "block", fontFamily: F, fontSize: 12, color: t.tipo === "regar" && t.orden === 0 ? C.red : C.inkSoft, marginTop: 1 }}>{t.detalle}</span>
+                  </span>
+                </button>
+                {t.tipo === "regar" && (
+                  <BotonRegar plant={t.planta} regadaHoy={regadaHoy(t.planta)} guardando={regando === t.planta.id} onRegar={onRegar} chico />
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {tareas.length > 4 && (
+        <button onClick={() => setVerTodo((v) => !v)} style={{ width: "100%", background: "none", border: "none", borderTop: "1px solid " + C.cardLine, padding: "10px 0 6px", fontFamily: F, fontWeight: 700, fontSize: 13, color: C.green, cursor: "pointer" }}>
+          {verTodo ? "Ver menos" : `Ver ${tareas.length - 4} más`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+// ---------- Detalle de una reservación: ver, cambiar fecha o cancelar ----------
+function DetalleReservacion({ r, fechasReservables, onCerrar, onActualizada }) {
+  const F = "'Inter', sans-serif";
+  const [modo, setModo] = useState("ver"); // ver | cambiar | cancelar
+  const [nuevaFecha, setNuevaFecha] = useState(null);
+  const [nuevaHora, setNuevaHora] = useState(null);
+  const [ocupadas, setOcupadas] = useState([]);
+  const [cargandoHoras, setCargandoHoras] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!nuevaFecha) return;
+    let vigente = true;
+    setCargandoHoras(true);
+    setOcupadas([]);
+    fetch(`/api/horarios-ocupados?fecha=${nuevaFecha}`)
+      .then((x) => (x.ok ? x.json() : { ocupadas: [] }))
+      .then((d) => vigente && setOcupadas(d.ocupadas || []))
+      .catch(() => {})
+      .finally(() => vigente && setCargandoHoras(false));
+    return () => {
+      vigente = false;
+    };
+  }, [nuevaFecha]);
+
+  const estadoInfo = {
+    pagado: { label: "Pagado", color: C.green, detalle: "Tu visita quedó confirmada." },
+    pendiente_pago: { label: "Pendiente de pago", color: AMBAR_TEXTO, detalle: "Todavía no se ha completado el pago de esta reservación." },
+    conflicto: { label: "Te contactaremos", color: C.red, detalle: "Recibimos tu pago, pero ese horario se ocupó justo antes. Te escribiremos por WhatsApp para cambiar la hora o devolverte tu dinero." },
+    cancelado: { label: "Cancelado", color: C.red, detalle: "Esta reservación fue cancelada." },
+    completado: { label: "Completada", color: C.blue, detalle: "La visita ya se realizó. ¡Gracias por confiar en Ámbitat!" },
+  }[r.estado] || { label: r.estado, color: C.inkSoft, detalle: "" };
+
+  const politica = politicaCancelacion(r);
+  const sePuedeCambiar = puedeCambiarFecha(r);
+  const pesos = (c) => `$${(c / 100).toLocaleString("es-MX")}`;
+
+  async function enviar(ruta, cuerpo) {
+    setEnviando(true);
+    setError(null);
+    try {
+      const token = await tokenSesion();
+      const x = await fetch(ruta, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(cuerpo),
+      });
+      const d = await x.json().catch(() => ({}));
+      if (!x.ok) throw new Error(d.error || "Algo salió mal. Intenta de nuevo.");
+      onActualizada(d.reservacion, d.mensaje);
+      setModo("ver");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const etiqueta = { fontFamily: F, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" };
+  const valor = { fontFamily: F, fontSize: 14, color: C.ink, margin: 0, lineHeight: 1.4 };
+  const botonGrande = (fondo, color, borde) => ({
+    width: "100%",
+    minHeight: 48,
+    borderRadius: 14,
+    border: borde || "none",
+    background: fondo,
+    color,
+    fontFamily: F,
+    fontWeight: 800,
+    fontSize: 14.5,
+    cursor: "pointer",
+  });
+
+  let reembolsoTexto = null;
+  if (r.estado === "cancelado" && r.reembolso_estado) {
+    reembolsoTexto =
+      r.reembolso_estado === "hecho"
+        ? `Te devolvimos ${pesos(r.reembolso_centavos || 0)} a tu tarjeta.`
+        : r.reembolso_estado === "pendiente_manual"
+        ? `Te depositaremos ${pesos(r.reembolso_centavos || 0)}; te escribiremos para pedirte una cuenta.`
+        : "Esta cancelación no tuvo reembolso.";
+  }
+
+  return (
+    <div
+      onClick={onCerrar}
+      style={{ position: "absolute", inset: 0, background: "rgba(20,16,8,0.55)", zIndex: 60, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detalle de tu reservación"
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: C.cream, borderRadius: "24px 24px 0 0", padding: "10px 20px 28px", width: "100%", maxWidth: 480, maxHeight: "88%", overflowY: "auto", boxSizing: "border-box" }}
+      >
+        <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardLine, margin: "0 auto 16px" }} />
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
+          <h2 style={{ fontFamily: F, fontWeight: 800, fontSize: 19, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
+            {modo === "cambiar" ? "Cambiar fecha" : modo === "cancelar" ? "Cancelar cita" : "Mantenimiento de plantas"}
+          </h2>
+          <button onClick={onCerrar} aria-label="Cerrar" style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 6, margin: -6 }}>
+            <Icon.X style={{ width: 20, height: 20 }} />
+          </button>
+        </div>
+
+        {modo === "ver" && (
+          <>
+            <span style={{ display: "inline-block", fontFamily: F, fontWeight: 700, fontSize: 11.5, color: estadoInfo.color, background: `${estadoInfo.color}1F`, padding: "5px 10px", borderRadius: 10, marginBottom: 14 }}>
+              {estadoInfo.label}
+            </span>
+            {estadoInfo.detalle && <p style={{ fontFamily: F, fontSize: 12.5, color: C.inkSoft, margin: "0 0 6px", lineHeight: 1.4 }}>{estadoInfo.detalle}</p>}
+            {reembolsoTexto && <p style={{ fontFamily: F, fontSize: 12.5, color: C.ink, margin: "0 0 6px", lineHeight: 1.4, fontWeight: 600 }}>{reembolsoTexto}</p>}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
+              <div>
+                <p style={etiqueta}>Fecha y hora</p>
+                <p style={valor}>
+                  {new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })} · {r.hora}
+                </p>
+              </div>
+              {r.direccion && (
+                <div>
+                  <p style={etiqueta}>Dirección</p>
+                  <p style={valor}>{r.direccion}</p>
+                </div>
+              )}
+              <div>
+                <p style={etiqueta}>Contacto</p>
+                <p style={valor}>
+                  {r.nombre_contacto} · {r.telefono}
+                </p>
+              </div>
+              {r.notas && (
+                <div>
+                  <p style={etiqueta}>Notas</p>
+                  <p style={valor}>{r.notas}</p>
+                </div>
+              )}
+              <div>
+                <p style={etiqueta}>Precio</p>
+                <p style={valor}>
+                  {formatoPrecio(r.precio_centavos)} MXN
+                  {tamanoPorClave(r.tamano) ? ` · Jardín ${tamanoPorClave(r.tamano).nombre.toLowerCase()}` : ""}
+                </p>
+              </div>
+            </div>
+            {(sePuedeCambiar || politica.puede) && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 22 }}>
+                {sePuedeCambiar && (
+                  <button onClick={() => setModo("cambiar")} style={botonGrande(C.green, "#fff")}>
+                    Cambiar fecha u hora
+                  </button>
+                )}
+                {politica.puede && (
+                  <button onClick={() => setModo("cancelar")} style={botonGrande("transparent", C.red, "1px solid " + C.cardLine)}>
+                    {politica.sinCobro ? "Cancelar reservación" : "Cancelar cita"}
+                  </button>
+                )}
+              </div>
+            )}
+            {r.estado === "pagado" && !sePuedeCambiar && (
+              <p style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, margin: "14px 0 0", lineHeight: 1.45 }}>
+                Faltan menos de 24 horas para tu cita. Para cambiarla, escríbenos por WhatsApp.
+              </p>
+            )}
+          </>
+        )}
+
+        {modo === "cambiar" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+            <p style={{ fontFamily: F, fontSize: 13, color: C.inkSoft, margin: 0, lineHeight: 1.45 }}>
+              Sin costo. Tu cita actual: {new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" })} · {r.hora}
+            </p>
+            <p style={etiquetaCampo}>Nueva fecha</p>
+            <div className="brotes-chips" role="radiogroup" aria-label="Nueva fecha">
+              {fechasReservables.map((f) => {
+                const elegida = f === nuevaFecha;
+                const d = new Date(f + "T12:00:00");
+                return (
+                  <button key={f} type="button" role="radio" aria-checked={elegida} onClick={() => { setNuevaFecha(f); setNuevaHora(null); }} style={{ ...chip(elegida), minWidth: 62, flexDirection: "column", padding: "8px 10px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{diaSemana(f) === 6 ? "Sáb" : "Dom"}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800 }}>{d.getDate()}</span>
+                    <span style={{ fontSize: 11, opacity: 0.8 }}>{d.toLocaleDateString("es-MX", { month: "short" }).replace(".", "")}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {nuevaFecha && (
+              <>
+                <p style={etiquetaCampo}>Nueva hora</p>
+                <div role="radiogroup" aria-label="Nueva hora" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {HORARIOS_DISPONIBLES.map((h) => {
+                    const actual = nuevaFecha === r.fecha && h === r.hora;
+                    const ocupada = !actual && ocupadas.includes(h);
+                    const elegida = h === nuevaHora;
+                    return (
+                      <button key={h} type="button" role="radio" aria-checked={elegida} disabled={ocupada || actual || cargandoHoras} onClick={() => setNuevaHora(h)} style={{ ...chip(elegida), opacity: ocupada || actual ? 0.4 : 1, textDecoration: ocupada ? "line-through" : "none" }}>
+                        {h}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            {error && <p role="alert" style={{ fontFamily: F, fontSize: 13, color: C.red, margin: 0 }}>{error}</p>}
+            <button
+              disabled={!nuevaFecha || !nuevaHora || enviando}
+              onClick={() => enviar("/api/cambiar-reservacion", { id: r.id, fecha: nuevaFecha, hora: nuevaHora })}
+              style={{ ...botonGrande(nuevaFecha && nuevaHora ? C.green : C.cardLine, nuevaFecha && nuevaHora ? "#fff" : C.inkSoft), marginTop: 8 }}
+            >
+              {enviando ? "Guardando..." : "Confirmar cambio"}
+            </button>
+            <button onClick={() => { setModo("ver"); setError(null); }} style={botonGrande("transparent", C.inkSoft)}>
+              Regresar
+            </button>
+          </div>
+        )}
+
+        {modo === "cancelar" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+            <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px" }}>
+              {politica.sinCobro ? (
+                <p style={{ ...valor, margin: 0 }}>Esta reservación todavía no está pagada, así que no se te cobra nada.</p>
+              ) : (
+                <>
+                  <p style={{ fontFamily: F, fontSize: 13, color: C.inkSoft, margin: "0 0 4px" }}>Te devolvemos</p>
+                  <p style={{ fontFamily: F, fontSize: 26, fontWeight: 800, color: C.ink, margin: 0, letterSpacing: "-0.02em" }}>
+                    {pesos(politica.monto)} <span style={{ fontSize: 14, color: C.inkSoft, fontWeight: 700 }}>({politica.porcentaje}%)</span>
+                  </p>
+                  <p style={{ fontFamily: F, fontSize: 12.5, color: C.inkSoft, margin: "6px 0 0", lineHeight: 1.45 }}>
+                    {politica.razon === "tardia"
+                      ? "Faltan menos de 48 horas para tu cita, por eso se devuelve la mitad."
+                      : politica.razon === "retracto"
+                      ? "Estás dentro de los 5 días hábiles después de tu pago: se devuelve completo."
+                      : "Cancelas con más de 48 horas de anticipación: se devuelve completo."}{" "}
+                    {r.metodo_pago === "oxxo"
+                      ? "Como pagaste en OXXO, te escribiremos para pedirte una cuenta y depositarte."
+                      : "Llega a tu tarjeta en 5 a 10 días hábiles."}
+                  </p>
+                </>
+              )}
+            </div>
+            <a href="/terminos#s8" target="_blank" rel="noopener" style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, textAlign: "center" }}>
+              Ver política de cancelación
+            </a>
+            {error && <p role="alert" style={{ fontFamily: F, fontSize: 13, color: C.red, margin: 0 }}>{error}</p>}
+            <button disabled={enviando} onClick={() => enviar("/api/cancelar-reservacion", { id: r.id })} style={{ ...botonGrande(C.red, "#fff"), opacity: enviando ? 0.7 : 1 }}>
+              {enviando ? "Cancelando..." : "Sí, cancelar"}
+            </button>
+            <button onClick={() => { setModo("ver"); setError(null); }} style={botonGrande("transparent", C.inkSoft)}>
+              No, mantener mi cita
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Nav inferior flotante ----------
 function BottomNav({ screen, setScreen, gardenCount }) {
   const items = [
@@ -1414,12 +2012,13 @@ function BottomNav({ screen, setScreen, gardenCount }) {
     },
   ];
   return (
-    <div
+    <nav
+      aria-label="Secciones"
       style={{
         display: "flex",
         flexShrink: 0,
         alignItems: "stretch",
-        margin: "0 16px 16px",
+        margin: "0 16px calc(16px + env(safe-area-inset-bottom, 0px))",
         padding: "8px 4px 6px",
         borderRadius: 22,
         background: "rgba(245,239,221,0.92)",
@@ -1432,6 +2031,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         <button
           key={item.key}
           onClick={item.onClick}
+          aria-current={item.active ? "page" : undefined}
           style={{
             flex: 1,
             display: "flex",
@@ -1463,7 +2063,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
           </span>
         </button>
       ))}
-    </div>
+    </nav>
   );
 }
 
@@ -1527,7 +2127,14 @@ export default function BrotesApp() {
       return;
     }
     const nombreAnterior = garden.find((p) => p.id === plantId)?.nombre_comun || null;
+    if (nombreAnterior === nuevoNombre) {
+      setEditingName(false);
+      return;
+    }
+    if (guardandoNombreRef.current) return; // evita doble toque
+    guardandoNombreRef.current = true;
     const { error } = await supabase.from("plantas").update({ nombre_comun: nuevoNombre }).eq("id", plantId);
+    guardandoNombreRef.current = false;
     if (!error) {
       setGarden((prev) => prev.map((p) => (p.id === plantId ? { ...p, nombre_comun: nuevoNombre } : p)));
       setEditingName(false);
@@ -1543,6 +2150,58 @@ export default function BrotesApp() {
       }
     } else {
       console.error("Error actualizando nombre:", error);
+      setAviso("No se pudo cambiar el nombre. Revisa tu conexión e intenta de nuevo.");
+    }
+  }
+  const guardandoNombreRef = useRef(false);
+
+  // ---------- "Ya la regué" ----------
+  // Registra el riego sin tener que tomar foto. Cuenta para la racha igual que
+  // una foto de seguimiento (regar varias veces el mismo día cuenta una vez).
+  const [regando, setRegando] = useState(null); // id de la planta que se está guardando
+  function regadaHoy(plant) {
+    return diasDesdeRiego(plant?.history, plant?.ultimo_riego) === 0;
+  }
+  async function marcarRegada(plant) {
+    if (!plant || regando || regadaHoy(plant)) return;
+    const estado = getWateringStatus(plant);
+    const rachaActual = plant.racha_riego || 0;
+    const nuevaRacha = estado?.late ? 0 : rachaActual + 1;
+    const ahora = new Date().toISOString();
+    setRegando(plant.id);
+    const { error } = await supabase.from("plantas").update({ ultimo_riego: ahora, racha_riego: nuevaRacha }).eq("id", plant.id);
+    setRegando(null);
+    if (error) {
+      console.error("Error registrando riego:", error);
+      setAviso("No se pudo guardar el riego. Revisa tu conexión e intenta de nuevo.");
+      return;
+    }
+    setGarden((prev) => prev.map((p) => (p.id === plant.id ? { ...p, ultimo_riego: ahora, racha_riego: nuevaRacha } : p)));
+    const dias = plant.dias_entre_riegos;
+    setAviso(`💧 Listo, regaste ${plant.nombre_comun || "tu planta"}.${dias ? ` Te avisamos en ${dias === 1 ? "1 día" : `${dias} días`}.` : ""}`);
+  }
+
+  // Ficha de cuidado: se pide la primera vez que se abre una planta.
+  const [fichaCargando, setFichaCargando] = useState(null);
+  const [fichaError, setFichaError] = useState(null);
+  async function cargarFicha(plant) {
+    if (!plant || plant.ficha || fichaCargando === plant.id) return;
+    setFichaCargando(plant.id);
+    setFichaError(null);
+    try {
+      const token = await tokenSesion();
+      const r = await fetch("/api/ficha-planta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plantaId: plant.id }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data.ficha) throw new Error(data.error || "No pudimos preparar la ficha.");
+      setGarden((prev) => prev.map((p) => (p.id === plant.id ? { ...p, ficha: data.ficha } : p)));
+    } catch (err) {
+      setFichaError({ id: plant.id, mensaje: err.message });
+    } finally {
+      setFichaCargando(null);
     }
   }
 
@@ -1570,6 +2229,8 @@ export default function BrotesApp() {
   const [savedPlantId, setSavedPlantId] = useState(null); // planta guardada del último análisis
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const idPendienteRef = useRef(null); // id de la planta que se está guardando
+  const [aviso, setAviso] = useState(null); // mensaje flotante que se cierra con la ×
 
   const [garden, setGarden] = useState([]);
   const [userId, setUserId] = useState(null);
@@ -1632,11 +2293,11 @@ export default function BrotesApp() {
   const [reservaHora, setReservaHora] = useState(HORARIOS_DISPONIBLES[0]);
   const [reservaDireccion, setReservaDireccion] = useState("");
   const [reservaNotas, setReservaNotas] = useState("");
-  const [reservaFechaError, setReservaFechaError] = useState(null);
   // Pasos de la Tienda: inicio (tarjeta) → tamano (elegir jardín) → datos (formulario)
   const [tiendaPaso, setTiendaPaso] = useState("inicio");
   const [reservaTamano, setReservaTamano] = useState(null);
   const [horasOcupadas, setHorasOcupadas] = useState([]);
+  const [cargandoHoras, setCargandoHoras] = useState(false);
 
   // Cada que se elige una fecha, pregunta qué horas ya están tomadas para no
   // ofrecerlas (y si la hora elegida ya no está libre, cambia a la primera libre).
@@ -1646,6 +2307,8 @@ export default function BrotesApp() {
       return;
     }
     let cancelado = false;
+    setHorasOcupadas([]);
+    setCargandoHoras(true);
     fetch(`/api/horarios-ocupados?fecha=${reservaFecha}`)
       .then((r) => (r.ok ? r.json() : { ocupadas: [] }))
       .then((data) => {
@@ -1659,6 +2322,9 @@ export default function BrotesApp() {
       })
       .catch(() => {
         if (!cancelado) setHorasOcupadas([]);
+      })
+      .finally(() => {
+        if (!cancelado) setCargandoHoras(false);
       });
     return () => {
       cancelado = true;
@@ -1667,22 +2333,17 @@ export default function BrotesApp() {
 
   const diaLleno = !!reservaFecha && HORARIOS_DISPONIBLES.every((h) => horasOcupadas.includes(h));
 
-  // El servicio de mantenimiento solo se ofrece sábados y domingos.
-  function handleReservaFechaChange(valor) {
-    if (!valor) {
-      setReservaFecha("");
-      setReservaFechaError(null);
-      return;
+  // Sábados y domingos desde mañana hasta 90 días: solo se ofrecen fechas válidas.
+  const fechasReservables = (() => {
+    const hoy = diaCDMX();
+    const lista = [];
+    for (let i = 1; i <= DIAS_MAXIMOS_ANTICIPACION; i++) {
+      const d = sumarDias(hoy, i);
+      if (esFinDeSemana(d)) lista.push(d);
     }
-    if (diasEntre(diaCDMX(), valor) < 0) {
-      setReservaFechaError("Esa fecha ya pasó. Elige otro sábado o domingo.");
-    } else if (esFinDeSemana(valor)) {
-      setReservaFecha(valor);
-      setReservaFechaError(null);
-    } else {
-      setReservaFechaError("Solo se puede agendar en sábado o domingo. Elige otra fecha.");
-    }
-  }
+    return lista;
+  })();
+
   const [reservando, setReservando] = useState(false);
   const [reservaError, setReservaError] = useState(null);
   const [misReservaciones, setMisReservaciones] = useState([]);
@@ -1700,6 +2361,7 @@ export default function BrotesApp() {
       .select("*")
       .eq("user_id", uid)
       .order("created_at", { ascending: false });
+    if (uid !== userIdRef.current) return; // cambió de cuenta mientras cargaba
     if (!error && data) setMisReservaciones(data);
     setCargandoReservaciones(false);
   }
@@ -1782,6 +2444,8 @@ export default function BrotesApp() {
       racha_riego: row.racha_riego || 0,
       imageUrl: row.image_url,
       history: row.historial || [],
+      ultimo_riego: row.ultimo_riego || null,
+      ficha: row.ficha || null,
     };
   }
 
@@ -1791,6 +2455,7 @@ export default function BrotesApp() {
       .select("*")
       .eq("user_id", uid)
       .order("created_at", { ascending: true });
+    if (uid !== userIdRef.current) return null; // cambió de cuenta mientras cargaba
     if (error) {
       console.error("Error cargando jardín:", error);
       setGardenError("No pudimos cargar tu jardín. Revisa tu conexión.");
@@ -1812,6 +2477,43 @@ export default function BrotesApp() {
   // Por qué se está pidiendo la cuenta (null = no se muestra la pantalla).
   const [cuentaMotivo, setCuentaMotivo] = useState(null); // entrar | guardar | plantas | reservar | recordatorios
   const LIMITE_PLANTAS_SIN_CUENTA = 3;
+  // Error que trae la dirección al volver de Google o de un enlace de correo.
+  // Se lee aquí (y no en la pantalla de cuenta) para no perderlo mientras carga.
+  const [errorCuenta, setErrorCuenta] = useState(leerErrorDeEnlace);
+
+  // Borra todo lo de la persona anterior (al cerrar sesión o cambiar de cuenta),
+  // para que en un celular compartido nadie vea datos de otro.
+  function resetEstadoUsuario() {
+    setGarden([]);
+    setMisReservaciones([]);
+    setSelectedPlant(null);
+    setEditingName(false);
+    setCompareMode(false);
+    setCompareIndices([]);
+    setReservaNombre("");
+    setReservaTelefono("");
+    setReservaCorreo("");
+    setReservaFecha("");
+    setReservaHora(HORARIOS_DISPONIBLES[0]);
+    setReservaDireccion("");
+    setReservaNotas("");
+    setReservaError(null);
+    setTiendaPaso("inicio");
+    setReservaTamano(null);
+    setReservaDetalle(null);
+    setTicket(null);
+    setPagoStatus(null);
+    setResult(null);
+    setError(null);
+    setSugerenciaTexto("");
+    setSugerenciaEnviada(false);
+    setSugerenciaError(null);
+    setNotifError(null);
+    photoUrls.forEach((u) => URL.revokeObjectURL(u));
+    setPhotoFiles([]);
+    setPhotoUrls([]);
+    setScreen("jardin");
+  }
 
   async function reintentarCarga() {
     setGardenError(null);
@@ -1828,14 +2530,12 @@ export default function BrotesApp() {
       userIdRef.current = null;
       setUserId(null);
       setUsuarioCorreo("");
-      setGarden([]);
-      setMisReservaciones([]);
-      setSelectedPlant(null);
-      setScreen("jardin");
+      resetEstadoUsuario();
       const { error } = await supabase.auth.signInAnonymously();
       if (error) {
-        // Si el uso sin cuenta está apagado en Supabase, se pide cuenta de entrada.
+        // Si el uso sin cuenta está apagado o saturado en Supabase, se pide cuenta de entrada.
         console.error("No se pudo abrir sesión sin cuenta:", error);
+        setErrorCuenta((actual) => actual || { tipo: "anonimo", mensaje: errorDeCuenta(error) });
         setAuthEstado("sin-cuenta");
         setLoadingGarden(false);
         setCargandoReservaciones(false);
@@ -1843,6 +2543,8 @@ export default function BrotesApp() {
       return; // si funcionó, Supabase avisa SIGNED_IN y se vuelve a llamar esta función
     }
     const u = session.user;
+    const mismoUsuario = u.id === userIdRef.current;
+    if (!mismoUsuario && userIdRef.current) resetEstadoUsuario();
     userIdRef.current = u.id;
     setUserId(u.id);
     setUsuarioCorreo(u.email || "");
@@ -1851,8 +2553,10 @@ export default function BrotesApp() {
 
     if (!u.is_anonymous) {
       setCuentaMotivo(null);
-      if (u.email) setReservaCorreo((actual) => actual || u.email);
-      // Si entró a mitad de algo (reservar, recordatorios...), lo retoma.
+      setErrorCuenta(null);
+      if (u.email) setReservaCorreo((actual) => (mismoUsuario && actual) || u.email);
+      // Si entró para reservar, lo lleva directo a elegir tamaño. (Para
+      // recordatorios no se puede pedir el permiso solo: lo activa con la 🔔.)
       let pendiente = null;
       try {
         pendiente = sessionStorage.getItem("ambitat-despues-de-entrar");
@@ -1881,7 +2585,13 @@ export default function BrotesApp() {
       sessionStorage.removeItem("ambitat-despues-de-entrar");
     } catch {}
     setCuentaMotivo(null);
+    setErrorCuenta(null);
   }
+
+  // Si volvió de Google o de un enlace con un error, se lo explicamos.
+  useEffect(() => {
+    if (authEstado === "lista" && esAnonimo && errorCuenta && !cuentaMotivo) setCuentaMotivo("entrar");
+  }, [authEstado, esAnonimo, errorCuenta, cuentaMotivo]);
 
   useEffect(() => {
     if (!sesionPagoId || authEstado !== "lista") return;
@@ -1914,13 +2624,25 @@ export default function BrotesApp() {
 
   async function cerrarSesion() {
     if (!window.confirm("¿Cerrar sesión en este celular?")) return;
-    await supabase.auth.signOut();
+    // Los recordatorios de esta cuenta dejan de llegar a este celular.
+    try {
+      const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub) {
+        await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+        await sub.unsubscribe();
+      }
+    } catch (err) {
+      console.error("No se pudieron quitar los recordatorios:", err);
+    }
+    // "local": solo cierra la sesión en este celular, no en los demás.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) window.alert("No se pudo cerrar sesión. Revisa tu conexión e intenta de nuevo.");
   }
 
   useEffect(() => {
-    // Supabase avisa cada que cambia la sesión (al abrir la app, al iniciar o
-    // cerrar sesión, al confirmar el correo o al abrir el enlace de
-    // "olvidé mi contraseña").
+    // Supabase avisa cada que cambia la sesión (al abrir la app, al entrar con
+    // Google o con el código del correo, y al cerrar sesión).
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (["INITIAL_SESSION", "SIGNED_IN", "SIGNED_OUT", "USER_UPDATED"].includes(event)) {
         // setTimeout: Supabase recomienda no llamar a la base de datos dentro
@@ -1949,7 +2671,8 @@ export default function BrotesApp() {
     async function checkNotifStatus() {
       if (!userId) return;
       if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-        setNotifStatus("unsupported");
+        // En iPhone solo funcionan si la app está agregada a la pantalla de inicio.
+        setNotifStatus(esIOSSinInstalar() ? "ios-instalar" : "unsupported");
         return;
       }
       if (Notification.permission === "denied") {
@@ -1959,7 +2682,15 @@ export default function BrotesApp() {
       try {
         const reg = await navigator.serviceWorker.getRegistration();
         const existing = reg ? await reg.pushManager.getSubscription() : null;
-        setNotifStatus(existing ? "subscribed" : "default");
+        if (!existing) return setNotifStatus("default");
+        // Solo cuenta como activado si esa suscripción es de esta cuenta.
+        const { data } = await supabase
+          .from("push_subscriptions")
+          .select("id")
+          .eq("endpoint", existing.endpoint)
+          .eq("user_id", userId)
+          .maybeSingle();
+        setNotifStatus(data ? "subscribed" : "default");
       } catch {
         setNotifStatus("default");
       }
@@ -1999,6 +2730,9 @@ export default function BrotesApp() {
         return;
       }
       if (permission !== "granted") return; // cerró el aviso sin decidir: puede intentarlo otra vez
+      // Si este celular tenía una suscripción vieja (p. ej. de otra cuenta), se cambia por una nueva.
+      const vieja = await reg.pushManager.getSubscription();
+      if (vieja) await vieja.unsubscribe();
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapid),
@@ -2024,6 +2758,8 @@ export default function BrotesApp() {
       pedirCuenta("plantas");
       return;
     }
+    idPendienteRef.current = null;
+    setSelectedPlant(null); // si venía del detalle de una planta, "Atrás" regresa al jardín
     setCaptureMode(mode);
     setFollowupPlantId(plantId);
     setError(null);
@@ -2111,16 +2847,17 @@ export default function BrotesApp() {
       console.error(err);
       if (!sigueVigente()) return;
       if (err.requiereCuenta) {
-        setScreen("camera");
+        setScreen("fotos");
         pedirCuenta("plantas");
         return;
       }
       setError(
-        err.status === 429 || err.status === 401
+        [401, 429, 503].includes(err.status)
           ? err.message
           : "No pudimos analizar la foto. Revisa tu conexión o intenta con otra imagen más clara."
       );
-      setScreen("camera");
+      // Regresa a sus fotos (no a la cámara vacía) para que pueda reintentar o cambiarlas.
+      setScreen("fotos");
     }
   }
 
@@ -2146,9 +2883,14 @@ export default function BrotesApp() {
       if (!uploadError) {
         const { data } = supabase.storage.from("plant-photos").getPublicUrl(path);
         publicUrl = data.publicUrl;
+        // Si luego hay que reintentar, ya no se vuelve a subir la foto.
+        if (sigueVigente()) {
+          setCapturedFile(null);
+          setImageUrl(publicUrl);
+        }
       } else {
         console.error("Error subiendo foto:", uploadError);
-        if (!sigueVigente()) return;
+        if (!sigueVigente()) return setAviso("No se pudo guardar tu última planta. Vuelve a tomarle la foto.");
         setIsSaving(false);
         setSaveError("No pudimos guardar la foto. Revisa tu conexión e intenta de nuevo.");
         return;
@@ -2172,7 +2914,7 @@ export default function BrotesApp() {
       //  - regar el mismo día que toca sí cuenta como a tiempo
       //  - varias fotos el mismo día solo cuentan una vez
       const estado = getWateringStatus(plant);
-      const mismoDia = diasDesdeUltimaFoto(plant?.history) === 0;
+      const mismoDia = diasDesdeRiego(plant?.history, plant?.ultimo_riego) === 0;
       const rachaActual = plant?.racha_riego || 0;
       const nuevaRacha = estado?.late ? 0 : mismoDia ? rachaActual : rachaActual + 1;
       const { error } = await supabase
@@ -2197,13 +2939,15 @@ export default function BrotesApp() {
         setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...resultData, racha_riego: nuevaRacha, imageUrl: publicUrl, history: newHistory } : p)));
       } else {
         console.error("Error actualizando planta:", error);
-        if (!sigueVigente()) return;
+        if (!sigueVigente()) return setAviso("No se pudo guardar la foto de seguimiento. Inténtalo de nuevo.");
         setIsSaving(false);
         setSaveError("No pudimos actualizar tu planta. Intenta de nuevo.");
         return;
       }
     } else {
-      const newId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+      // Al reintentar se usa el mismo id, para no duplicar la planta.
+      const newId = idPendienteRef.current || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+      idPendienteRef.current = newId;
       nuevoIdGuardado = newId;
       const { error } = await supabase.from("plantas").insert({
         id: newId,
@@ -2222,11 +2966,12 @@ export default function BrotesApp() {
         image_url: publicUrl,
         historial: [historyEntry],
       });
-      if (!error) {
+      // 23505 = ya se había guardado (se perdió la respuesta): cuenta como guardada.
+      if (!error || error.code === "23505") {
         setGarden((prev) => [...prev, { ...resultData, id: newId, racha_riego: 0, imageUrl: publicUrl, history: [historyEntry] }]);
       } else {
         console.error("Error guardando planta:", error);
-        if (!sigueVigente()) return;
+        if (!sigueVigente()) return setAviso("No se pudo guardar tu última planta. Vuelve a tomarle la foto.");
         setIsSaving(false);
         setSaveError("No pudimos guardar tu planta. Intenta de nuevo.");
         return;
@@ -2243,11 +2988,12 @@ export default function BrotesApp() {
   // Sin esto, "Atrás" cerraba la app. Ahora cierra lo que esté abierto encima
   // (tip, detalle de reserva, planta) o regresa al jardín.
   const nivelAbierto = authEstado !== "lista" ? null :
-    cuentaMotivo ? "cuenta" : activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
+    cuentaMotivo ? "cuenta" : ticket ? "ticket" : activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
   const historialRef = useRef({ agregado: false, ignorarSiguiente: false });
   const cerrarRef = useRef(() => {});
   cerrarRef.current = () => {
     if (cuentaMotivo) cerrarCuenta();
+    else if (ticket) setTicket(null);
     else if (activeTip !== null) setActiveTip(null);
     else if (reservaDetalle) setReservaDetalle(null);
     else if (selectedPlant) {
@@ -2257,6 +3003,8 @@ export default function BrotesApp() {
       setCompareIndices([]);
     } else if (screen !== "jardin") {
       analisisIdRef.current++;
+      setSugerenciaEnviada(false);
+      setSugerenciaError(null);
       setScreen("jardin");
     }
   };
@@ -2287,6 +3035,11 @@ export default function BrotesApp() {
   }, []);
 
   const activePlant = garden.find((p) => p.id === selectedPlant);
+  // Al abrir una planta sin ficha de cuidado, se prepara.
+  useEffect(() => {
+    if (activePlant && !activePlant.ficha) cargarFicha(activePlant);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlant?.id]);
 
   return (
     <div className="brotes-root" lang="es" style={{ display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
@@ -2295,7 +3048,7 @@ export default function BrotesApp() {
       <div className="brotes-shell">
         {authEstado !== "lista" ? (
           <div className="brotes-scroll">
-            <PantallaCuenta estado={authEstado} esAnonimo={false} onReintentar={reintentarCarga} />
+            <PantallaCuenta estado={authEstado} esAnonimo={false} onReintentar={reintentarCarga} errorInicial={errorCuenta} />
           </div>
         ) : (
         <>
@@ -2314,12 +3067,21 @@ export default function BrotesApp() {
               motivo={cuentaMotivo}
               plantasGuardadas={garden.length}
               onCerrar={cerrarCuenta}
+              errorInicial={errorCuenta}
             />
           </div>
         )}
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
         <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
         <div className="brotes-scroll-shade" style={{ opacity: scrolled ? 1 : 0 }} />
+        {aviso && (
+          <div role="alert" style={{ position: "absolute", top: 12, left: 16, right: 16, zIndex: 70, display: "flex", alignItems: "center", gap: 10, background: C.ink, color: "#fff", borderRadius: 14, padding: "12px 12px 12px 16px", boxShadow: "0 12px 30px -12px rgba(0,0,0,0.5)" }}>
+            <p style={{ flex: 1, margin: 0, fontFamily: "'Inter', sans-serif", fontSize: 13.5, lineHeight: 1.4 }}>{aviso}</p>
+            <button onClick={() => setAviso(null)} aria-label="Cerrar aviso" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 6, display: "flex" }}>
+              <Icon.X style={{ width: 16, height: 16 }} />
+            </button>
+          </div>
+        )}
         <div
           className="brotes-scroll"
           ref={scrollRef}
@@ -2437,6 +3199,11 @@ export default function BrotesApp() {
             <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: C.cream, margin: "0 0 4px", textAlign: "center", letterSpacing: "-0.01em" }}>
               Tus fotos ({photoUrls.length}/3)
             </p>
+            {error && (
+              <p role="alert" style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#f2b8a8", margin: "4px 0 10px", textAlign: "center", lineHeight: 1.4 }}>
+                {error}
+              </p>
+            )}
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "rgba(245,239,221,0.65)", margin: "0 0 18px", textAlign: "center" }}>
               Agregar más ángulos (hoja de cerca, planta completa, tallo) ayuda a identificarla mejor
             </p>
@@ -2650,6 +3417,19 @@ export default function BrotesApp() {
                       🔔
                     </button>
                   )}
+                  {notifStatus === "ios-instalar" && (
+                    <button
+                      onClick={() =>
+                        esAnonimo
+                          ? pedirCuenta("recordatorios")
+                          : setNotifError("En iPhone, primero agrega Ámbitat a tu pantalla de inicio: toca Compartir (el cuadrito con flecha ⬆️) → \"Agregar a inicio\". Ábrela desde ese ícono y toca la 🔔.")
+                      }
+                      aria-label="Activar recordatorios"
+                      style={{ width: 38, height: 38, borderRadius: "50%", background: C.tileBg, border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: C.ink, fontSize: 15 }}
+                    >
+                      🔔
+                    </button>
+                  )}
                   {notifStatus === "subscribed" && (
                     <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: C.green }}>🔔</span>
                   )}
@@ -2696,6 +3476,20 @@ export default function BrotesApp() {
                   <span aria-hidden="true" style={{ color: C.green, fontWeight: 700 }}>→</span>
                 </button>
               )}
+
+              <HoyEnTuJardin
+                garden={garden}
+                reservaciones={misReservaciones}
+                regadaHoy={regadaHoy}
+                regando={regando}
+                onRegar={marcarRegada}
+                onAbrirPlanta={(p) => setSelectedPlant(p.id)}
+                onFoto={(p) => openCamera("followup", p.id)}
+                onAbrirCita={(r) => {
+                  setScreen("tienda");
+                  setReservaDetalle(r);
+                }}
+              />
 
               <div style={{ display: "flex", gap: 12, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px", alignItems: "stretch" }}>
                 {garden.length > 0 && (() => {
@@ -2872,29 +3666,7 @@ export default function BrotesApp() {
                 </div>
               ) : (
                 <>
-                  {(() => {
-                    const urgentes = garden.filter((p) => getWateringStatus(p)?.urgent).length;
-                    if (urgentes === 0) return null;
-                    return (
-                      <div
-                        style={{
-                          background: "rgba(255,59,48,0.08)",
-                          borderRadius: 14,
-                          padding: "12px 16px",
-                          marginBottom: 14,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                        }}
-                      >
-                        <Icon.Droplet style={{ color: C.red, width: 18, height: 18, flexShrink: 0 }} />
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: C.red, margin: 0 }}>
-                          {urgentes === 1 ? "1 planta necesita agua hoy" : `${urgentes} plantas necesitan agua hoy`}
-                        </p>
-                      </div>
-                    );
-                  })()}
-
+                  {/* (El aviso de "plantas que necesitan agua" ahora vive en la tarjeta "Hoy".) */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }}>
                     {[
                       { key: "recientes", label: "Recientes" },
@@ -2925,20 +3697,34 @@ export default function BrotesApp() {
 
                   <div className="brotes-grid">
                   {ordenarJardin(garden, ordenJardin).map((p) => (
-                    <div key={p.id} className="brotes-reveal" onClick={() => setSelectedPlant(p.id)} style={{ cursor: "pointer", position: "relative" }}>
+                    <div
+                      key={p.id}
+                      className="brotes-reveal"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Ver ${p.nombre_comun || "planta"}`}
+                      onClick={() => setSelectedPlant(p.id)}
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && setSelectedPlant(p.id)}
+                      style={{ cursor: "pointer", position: "relative" }}
+                    >
                       <button
                         aria-label={`Borrar ${p.nombre_comun || "planta"}`}
                         onClick={async (e) => {
                           e.stopPropagation();
                           if (!window.confirm(`¿Borrar "${p.nombre_comun || "esta planta"}" y todo su historial? No se puede deshacer.`)) return;
-                          const antes = garden;
                           setGarden((prev) => prev.filter((x) => x.id !== p.id));
                           const { error } = await supabase.from("plantas").delete().eq("id", p.id);
                           if (error) {
                             console.error("Error borrando planta:", error);
-                            setGarden(antes); // la regresa si no se pudo borrar
+                            setGarden((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, p])); // la regresa si no se pudo borrar
                             window.alert("No pudimos borrar la planta. Revisa tu conexión e intenta de nuevo.");
+                            return;
                           }
+                          // También borra sus fotos guardadas.
+                          const rutas = [p.imageUrl, ...(p.history || []).map((h) => h.imageUrl)]
+                            .filter((u) => typeof u === "string" && u.includes("/plant-photos/"))
+                            .map((u) => decodeURIComponent(u.split("/plant-photos/")[1].split("?")[0]));
+                          if (rutas.length) supabase.storage.from("plant-photos").remove([...new Set(rutas)]).catch(() => {});
                         }}
                         // Botón de 40px (fácil de tocar) con un círculo chico en la esquina
                         style={{ position: "absolute", top: -12, right: -12, zIndex: 2, background: "transparent", border: "none", width: 40, height: 40, padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -2985,6 +3771,19 @@ export default function BrotesApp() {
                 onSave: () => saveNameEdit(activePlant.id),
                 onCancel: () => setEditingName(false),
               }}
+            />
+
+            {activePlant.dias_entre_riegos ? (
+              <div style={{ marginTop: 14 }}>
+                <BotonRegar plant={activePlant} regadaHoy={regadaHoy(activePlant)} guardando={regando === activePlant.id} onRegar={marcarRegada} />
+              </div>
+            ) : null}
+
+            <FichaCuidado
+              ficha={activePlant.ficha}
+              cargando={fichaCargando === activePlant.id}
+              error={fichaError?.id === activePlant.id ? fichaError.mensaje : null}
+              onReintentar={() => cargarFicha(activePlant)}
             />
 
             <div style={{ marginTop: 28 }}>
@@ -3036,7 +3835,7 @@ export default function BrotesApp() {
                           border: selected ? "3px solid " + C.pine : "1px solid " + C.creamLine,
                         }}
                       />
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "4px 0 0" }}>{h.date}</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "4px 0 0" }}>{fechaHistorial(h)}</p>
                     </div>
                   );
                 })}
@@ -3051,12 +3850,12 @@ export default function BrotesApp() {
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <img src={antes.imageUrl} alt="Antes" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 10 }} />
                       <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, color: C.ink, margin: "6px 0 0" }}>Antes</p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>{antes.date}</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>{fechaHistorial(antes)}</p>
                     </div>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <img src={despues.imageUrl} alt="Después" style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", borderRadius: 10 }} />
                       <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, color: C.ink, margin: "6px 0 0" }}>Después</p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>{despues.date}</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, margin: "2px 0 0" }}>{fechaHistorial(despues)}</p>
                     </div>
                   </div>
                 );
@@ -3072,7 +3871,7 @@ export default function BrotesApp() {
           </div>
         )}
 
-        {/* ---------------- BUZÓN DE SUGERENCIAS ---------------- */}
+        {/* ---------------- MI CUENTA ---------------- */}
         {screen === "cuenta" && (
           <div style={{ padding: "18px 16px 20px", flex: 1 }}>
             <button
@@ -3104,6 +3903,7 @@ export default function BrotesApp() {
           </div>
         )}
 
+        {/* ---------------- BUZÓN DE SUGERENCIAS ---------------- */}
         {screen === "sugerencias" && (
           <div style={{ padding: "18px 16px 20px", flex: 1 }}>
             <button
@@ -3483,67 +4283,92 @@ export default function BrotesApp() {
                           value={reservaNombre}
                           onChange={(e) => setReservaNombre(e.target.value)}
                           placeholder="Tu nombre"
-                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                          aria-label="Tu nombre"
+                          autoComplete="name"
+                          style={estiloCampo}
                         />
                         <input
                           value={reservaTelefono}
                           onChange={(e) => setReservaTelefono(e.target.value)}
                           placeholder="Teléfono (WhatsApp)"
+                          aria-label="Teléfono"
                           type="tel"
-                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                          inputMode="tel"
+                          autoComplete="tel"
+                          style={estiloCampo}
                         />
                         <input
                           value={reservaCorreo}
                           onChange={(e) => setReservaCorreo(e.target.value)}
                           placeholder="Correo (para tu recibo de pago)"
+                          aria-label="Correo"
                           type="email"
-                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                          autoComplete="email"
+                          style={estiloCampo}
                         />
                         <input
                           value={reservaDireccion}
                           onChange={(e) => setReservaDireccion(e.target.value)}
                           placeholder="Dirección de la visita (calle, número, colonia)"
-                          style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, background: C.tileBg }}
+                          aria-label="Dirección de la visita"
+                          autoComplete="street-address"
+                          style={estiloCampo}
                         />
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Fecha</span>
-                            <input
-                              value={reservaFecha}
-                              onChange={(e) => handleReservaFechaChange(e.target.value)}
-                              type="date"
-                              min={diaCDMX()}
-                              style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
-                            />
-                          </label>
-                          <label style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: C.inkSoft, paddingLeft: 2 }}>Hora</span>
-                          <select
-                            value={reservaHora}
-                            onChange={(e) => setReservaHora(e.target.value)}
-                            style={{ width: "100%", minWidth: 0, boxSizing: "border-box", minHeight: 44, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, background: C.tileBg }}
-                          >
-                            {HORARIOS_DISPONIBLES.map((h) => {
-                              const ocupada = horasOcupadas.includes(h);
-                              return (
-                                <option key={h} value={h} disabled={ocupada}>
-                                  {h}{ocupada ? " (ocupado)" : ""}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          </label>
+                        <p style={etiquetaCampo}>Fecha (sábado o domingo)</p>
+                        <div className="brotes-chips" role="radiogroup" aria-label="Fecha de la visita">
+                          {fechasReservables.map((f) => {
+                            const elegida = f === reservaFecha;
+                            const fecha = new Date(f + "T12:00:00");
+                            return (
+                              <button
+                                key={f}
+                                type="button"
+                                role="radio"
+                                aria-checked={elegida}
+                                onClick={() => setReservaFecha(f)}
+                                style={{ ...chip(elegida), minWidth: 62, flexDirection: "column", padding: "8px 10px" }}
+                              >
+                                <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{diaSemana(f) === 6 ? "Sáb" : "Dom"}</span>
+                                <span style={{ fontSize: 14, fontWeight: 800 }}>{fecha.getDate()}</span>
+                                <span style={{ fontSize: 11, opacity: 0.8 }}>{fecha.toLocaleDateString("es-MX", { month: "short" }).replace(".", "")}</span>
+                              </button>
+                            );
+                          })}
                         </div>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: reservaFechaError || diaLleno ? C.red : C.inkSoft, margin: "-4px 0 0" }}>
-                          {reservaFechaError ||
-                            (diaLleno
-                              ? "Ese día ya está lleno. Elige otro sábado o domingo."
-                              : "El mantenimiento solo se agenda en sábado o domingo.")}
-                        </p>
+                        {reservaFecha && (
+                          <>
+                            <p style={etiquetaCampo}>Hora</p>
+                            <div role="radiogroup" aria-label="Hora de la visita" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                              {HORARIOS_DISPONIBLES.map((h) => {
+                                const ocupada = horasOcupadas.includes(h);
+                                const elegida = h === reservaHora && !ocupada;
+                                return (
+                                  <button
+                                    key={h}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={elegida}
+                                    disabled={ocupada || cargandoHoras}
+                                    onClick={() => setReservaHora(h)}
+                                    style={{ ...chip(elegida), opacity: ocupada ? 0.4 : 1, textDecoration: ocupada ? "line-through" : "none", cursor: ocupada ? "not-allowed" : "pointer" }}
+                                  >
+                                    {h}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {diaLleno && (
+                              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.red, margin: 0 }}>
+                                Ese día ya está lleno. Elige otra fecha.
+                              </p>
+                            )}
+                          </>
+                        )}
                         <textarea
                           value={reservaNotas}
                           onChange={(e) => setReservaNotas(e.target.value)}
-                          placeholder="Notas para la visita (opcional)"
+                          placeholder="Notas para la visita (opcional): mascotas, cómo llegar, piso..."
+                          aria-label="Notas para la visita"
                           rows={2}
                           style={{ border: "1px solid " + C.cardLine, borderRadius: 10, padding: 10, fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, resize: "none", boxSizing: "border-box", background: C.tileBg }}
                         />
@@ -3641,106 +4466,19 @@ export default function BrotesApp() {
         {ticket && authEstado === "lista" && <TicketPago datos={ticket} onCerrar={() => setTicket(null)} />}
 
         {reservaDetalle && (
-          <div
-            onClick={() => setReservaDetalle(null)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(20,16,8,0.55)",
-              zIndex: 60,
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
+          <DetalleReservacion
+            key={reservaDetalle.id}
+            r={reservaDetalle}
+            fechasReservables={fechasReservables}
+            onCerrar={() => setReservaDetalle(null)}
+            onActualizada={(nueva, mensaje) => {
+              if (nueva) {
+                setMisReservaciones((prev) => prev.map((x) => (x.id === nueva.id ? nueva : x)));
+                setReservaDetalle(nueva);
+              }
+              if (mensaje) setAviso(mensaje);
             }}
-          >
-            {(() => {
-              const r = reservaDetalle;
-              const estadoInfo = {
-                pagado: { label: "Pagado", color: C.green, detalle: "Tu visita quedó confirmada." },
-                pendiente_pago: { label: "Pendiente de pago", color: AMBAR_TEXTO, detalle: "Todavía no se ha completado el pago de esta reservación." },
-                conflicto: { label: "Te contactaremos", color: C.red, detalle: "Recibimos tu pago, pero ese horario se ocupó justo antes. Te escribiremos por WhatsApp para cambiar la hora o devolverte tu dinero." },
-                cancelado: { label: "Cancelado", color: C.red, detalle: "Esta reservación fue cancelada." },
-                completado: { label: "Completada", color: C.blue, detalle: "La visita ya se realizó. ¡Gracias por confiar en Ámbitat!" },
-              }[r.estado] || { label: r.estado, color: C.inkSoft, detalle: "" };
-              return (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  style={{ background: C.cream, borderRadius: "24px 24px 0 0", padding: "10px 20px 28px", width: "100%", maxWidth: 480, maxHeight: "85%", overflowY: "auto", boxSizing: "border-box" }}
-                >
-                  <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardLine, margin: "0 auto 16px" }} />
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
-                    <h2 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 19, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>
-                      Mantenimiento de plantas
-                    </h2>
-                    <button onClick={() => setReservaDetalle(null)} aria-label="Cerrar" style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 6, margin: -6 }}>
-                      <Icon.X style={{ width: 20, height: 20 }} />
-                    </button>
-                  </div>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      fontFamily: "'Inter', sans-serif",
-                      fontWeight: 700,
-                      fontSize: 11.5,
-                      color: estadoInfo.color,
-                      background: `${estadoInfo.color}1F`,
-                      padding: "5px 10px",
-                      borderRadius: 10,
-                      marginBottom: 14,
-                    }}
-                  >
-                    {estadoInfo.label}
-                  </span>
-                  {estadoInfo.detalle && (
-                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 16px", lineHeight: 1.4 }}>
-                      {estadoInfo.detalle}
-                    </p>
-                  )}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
-                        Fecha y hora
-                      </p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>
-                        {new Date(r.fecha + "T00:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })} · {r.hora}
-                      </p>
-                    </div>
-                    {r.direccion && (
-                      <div>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
-                          Dirección
-                        </p>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>{r.direccion}</p>
-                      </div>
-                    )}
-                    <div>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
-                        Contacto
-                      </p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>{r.nombre_contacto} · {r.telefono}</p>
-                    </div>
-                    {r.notas && (
-                      <div>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
-                          Notas
-                        </p>
-                        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0, lineHeight: 1.4 }}>{r.notas}</p>
-                      </div>
-                    )}
-                    <div>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: C.inkSoft, margin: "0 0 2px" }}>
-                        Precio
-                      </p>
-                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.ink, margin: 0 }}>
-                        {formatoPrecio(r.precio_centavos)} MXN
-                        {tamanoPorClave(r.tamano) ? ` · Jardín ${tamanoPorClave(r.tamano).nombre.toLowerCase()}` : ""}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
+          />
         )}
 
         {activeTip !== null && (

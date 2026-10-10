@@ -159,12 +159,13 @@ export default function Terminos() {
           ]}
         />
         <p>
-          Para cancelar o cambiar tu cita escríbenos a <Dato v={R.correo} /> o al WhatsApp <Dato v={R.telefono} /> con tu nombre
-          y la fecha de tu reservación. La cancelación cuenta desde el momento en que recibimos tu mensaje.
+          Puedes cancelar o cambiar tu cita en cualquier momento desde la app, en <strong>Tienda → Tus reservaciones</strong>: ahí
+          mismo ves cuánto se te devuelve antes de confirmar. También puedes escribirnos a <Dato v={R.correo} /> o al WhatsApp{" "}
+          <Dato v={R.telefono} />. La cancelación cuenta desde el momento en que la haces en la app o recibimos tu mensaje.
         </p>
         <p>
-          Los reembolsos se hacen al mismo medio de pago a través de Stripe. A tarjeta suelen verse en 5 a 10 días hábiles,
-          según tu banco. Si pagaste en OXXO, te pediremos una cuenta bancaria para depositarte.
+          Si pagaste con tarjeta, el reembolso se hace en automático al cancelar y suele verse en 5 a 10 días hábiles, según tu
+          banco. Si pagaste en OXXO, te pediremos una cuenta bancaria para depositarte.
         </p>
 
         <h3>8.6 Garantía y quejas</h3>

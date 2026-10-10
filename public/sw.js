@@ -12,8 +12,8 @@ self.addEventListener("push", function (event) {
   const title = data.title || "Ámbitat";
   const options = {
     body: data.body || "Una de tus plantas necesita atención.",
-    icon: "/logo.png",
-    badge: "/logo.png",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
     data: { url: data.url || "/" },
   };
 
@@ -22,5 +22,14 @@ self.addEventListener("push", function (event) {
 
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  event.waitUntil(clients.openWindow(event.notification.data?.url || "/"));
+  const url = event.notification.data?.url || "/";
+  // Si la app ya está abierta, la trae al frente en lugar de abrir otra.
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (ventanas) {
+      for (const v of ventanas) {
+        if ("focus" in v) return v.focus();
+      }
+      return clients.openWindow(url);
+    })
+  );
 });

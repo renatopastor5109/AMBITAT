@@ -7,13 +7,13 @@ import { esAdmin } from "../../../lib/adminAuth";
 function explicar(mensaje) {
   const m = (mensaje || "").toLowerCase();
   if (m.includes("not authorized"))
-    return "Supabase todavía usa su correo de prueba: solo puede mandar a miembros de tu equipo. Falta conectar Resend (SMTP propio).";
+    return "Supabase todavía usa su correo de prueba: solo puede mandar a miembros de tu equipo. Falta conectar tu propio correo (Gmail o Resend, paso 3 de la guía).";
   if (m.includes("rate limit") || m.includes("security purposes"))
-    return "Se alcanzó el límite de correos. Con el correo de prueba de Supabase son muy pocos por hora; con Resend se quita. Espera un rato e intenta otra vez.";
+    return "Se alcanzó el límite de correos. Con el correo de prueba de Supabase son muy pocos por hora; con tu propio correo se quita. Espera un rato e intenta otra vez.";
   if (m.includes("signups not allowed") || m.includes("signup"))
     return "El registro de cuentas nuevas está apagado en Supabase (Authentication → Sign In / Providers → Allow new users to sign up).";
   if (m.includes("smtp") || m.includes("sending") || m.includes("error sending"))
-    return "Supabase no pudo mandar el correo. Revisa los datos de SMTP (host smtp.resend.com, puerto 465, usuario resend, contraseña = API key) y que tu dominio esté verificado en Resend.";
+    return "Supabase no pudo mandar el correo. Revisa los datos de SMTP en Supabase. Con Gmail: host smtp.gmail.com, puerto 465, usuario = tu Gmail, contraseña = la contraseña de aplicación de 16 letras.";
   return mensaje || "Error desconocido";
 }
 
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const origen = `https://${req.headers["x-forwarded-host"] || req.headers.host}`;
+  const origen = process.env.NEXT_PUBLIC_SITE_URL || "https://ambitat.vercel.app";
   const { error } = await supabase.auth.signInWithOtp({
     email: correo,
     options: { shouldCreateUser: true, emailRedirectTo: origen },

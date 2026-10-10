@@ -4,6 +4,8 @@
 import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
 
 export const config = {
+  // La IA puede tardar 15-40 s con varias fotos (el límite normal es 10 s).
+  maxDuration: 60,
   api: {
     bodyParser: {
       // La app comprime las fotos antes de mandarlas (~300 KB cada una).
@@ -19,8 +21,8 @@ const TIPOS_PERMITIDOS = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 // Anthropic si alguien intenta usar la app de forma automatizada.
 const LIMITE_DIARIO = 25;
 
-// Revisa el límite diario. Si la tabla "analisis_uso" todavía no existe
-// (no se ha corrido el SQL), deja pasar para no romper la app.
+// Revisa el límite diario. El análisis se anota hasta que sale bien
+// (registrarUso), así un error no le gasta intentos a la persona.
 async function dentroDelLimite(admin, userId) {
   const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const { count, error } = await admin
@@ -30,12 +32,15 @@ async function dentroDelLimite(admin, userId) {
     .gte("created_at", hace24h);
   if (error) {
     console.error("No se pudo revisar el límite de análisis:", error.message);
-    return true;
+    return null;
   }
-  if (count >= LIMITE_DIARIO) return false;
-  const { error: insertError } = await admin.from("analisis_uso").insert({ user_id: userId });
-  if (insertError) console.error("No se pudo registrar el análisis:", insertError.message);
-  return true;
+  return count < LIMITE_DIARIO;
+}
+
+async function registrarUso(userId) {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return;
+  const { error } = await clienteAdmin().from("analisis_uso").insert({ user_id: userId });
+  if (error) console.error("No se pudo registrar el análisis:", error.message);
 }
 
 // Sin cuenta se pueden cuidar hasta 3 plantas (y sus seguimientos), con un
@@ -91,6 +96,9 @@ export default async function handler(req, res) {
 
   if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const permitido = await dentroDelLimite(clienteAdmin(), usuario.id);
+    if (permitido === null) {
+      return res.status(503).json({ error: "No pudimos analizar la foto ahorita. Intenta en un momento." });
+    }
     if (!permitido) {
       return res.status(429).json({ error: "Llegaste al límite de análisis por hoy. Intenta mañana." });
     }
@@ -136,7 +144,7 @@ export default async function handler(req, res) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-5",
+        model: "claude-sonnet-5-5",
         max_tokens: 1500,
         system:
           "Eres un botánico experto. Analiza la(s) foto(s) de una planta y responde SOLO con un objeto JSON válido, sin texto adicional ni backticks de markdown. Claves exactas: nombre_comun (string), nombre_cientifico (string), confianza ('alta'|'media'|'baja'), estado_general ('saludable'|'regular'|'critico'), riego (string breve describiendo el riego), dias_entre_riegos (número entero: tu mejor estimación de cada cuántos días se debe regar esta planta según su especie y el clima promedio), luz (string breve), problemas_detectados (array de strings, vacío si no hay), causa_probable (string o null: si detectaste algún problema, explica en una frase breve la causa más probable de por qué se ve así, por ejemplo 'las hojas amarillas suelen deberse a exceso de riego' — null si la planta está saludable), consejos (array de 2 a 4 strings), advertencia (string o null). " +
@@ -172,6 +180,7 @@ export default async function handler(req, res) {
       console.error("Respuesta de la IA que no es JSON:", text.slice(0, 300));
       return res.status(502).json({ error: "No se pudo leer el análisis" });
     }
+    await registrarUso(usuario.id);
     return res.status(200).json(parsed);
   } catch (err) {
     console.error(err);

@@ -6,6 +6,8 @@ import { diasParaRiego } from "../../lib/fechas";
 // (ver vercel.json: 14:00 UTC = 8:00 am en CDMX).
 // Usa la llave "service role" (acceso total), nunca expuesta al navegador.
 
+export const config = { maxDuration: 60 };
+
 const POR_PAGINA = 1000; // Supabase regresa máximo 1000 filas por consulta
 
 async function todasLasFilas(consulta) {
@@ -41,13 +43,13 @@ export default async function handler(req, res) {
     );
 
     const plantas = await todasLasFilas(() =>
-      admin.from("plantas").select("id, user_id, nombre_comun, dias_entre_riegos, historial").order("id")
+      admin.from("plantas").select("*").order("id") // "*": funciona aunque falte alguna columna nueva
     );
 
     // Agrupa por usuario los nombres de las plantas que necesitan agua hoy
     const porUsuario = {};
     for (const planta of plantas) {
-      const faltan = diasParaRiego(planta.dias_entre_riegos, planta.historial);
+      const faltan = diasParaRiego(planta.dias_entre_riegos, planta.historial, planta.ultimo_riego);
       if (faltan !== null && faltan <= 0) {
         (porUsuario[planta.user_id] = porUsuario[planta.user_id] || []).push(planta.nombre_comun || "Una planta");
       }
@@ -70,9 +72,9 @@ export default async function handler(req, res) {
     let enviados = 0;
     let expirados = 0;
 
-    for (const sub of subs) {
+    async function enviar(sub) {
       const nombres = porUsuario[sub.user_id];
-      if (!nombres || nombres.length === 0) continue;
+      if (!nombres || nombres.length === 0) return;
 
       const body =
         nombres.length === 1
@@ -91,6 +93,11 @@ export default async function handler(req, res) {
           console.error("Error enviando push:", err.message);
         }
       }
+    }
+
+    // De 20 en 20 en paralelo, para no pasarnos del tiempo máximo de Vercel.
+    for (let i = 0; i < subs.length; i += 20) {
+      await Promise.all(subs.slice(i, i + 20).map(enviar));
     }
 
     return res.status(200).json({ ok: true, notificados: enviados, suscripciones_expiradas: expirados });

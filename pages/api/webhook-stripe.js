@@ -39,7 +39,7 @@ async function marcarPagada(admin, stripe, session) {
 
   const { data: reservacion, error: leerError } = await admin
     .from("reservaciones")
-    .select("id, estado, precio_centavos, stripe_session_id")
+    .select("*")
     .eq("id", reservacionId)
     .maybeSingle();
   if (leerError) throw leerError;
@@ -52,7 +52,16 @@ async function marcarPagada(admin, stripe, session) {
     console.error(`Monto inesperado en reservación ${reservacionId}: ${session.amount_total}`);
     return;
   }
-  if (reservacion.estado === "pagado" || reservacion.estado === "completado") return; // ya procesado
+  if (reservacion.estado === "pagado" || reservacion.estado === "completado" || reservacion.estado === "conflicto") return; // ya procesado
+  // (Si ya tiene reembolso_estado, se canceló DESPUÉS de pagar: es un aviso repetido de Stripe.)
+  if (reservacion.estado === "cancelado" && !reservacion.reembolso_estado) {
+    // Pagó (p. ej. en OXXO) una reservación que ya había cancelado: se marca
+    // para que en el panel veas que hay que devolverle el dinero.
+    const { error: cError } = await admin.from("reservaciones").update({ estado: "conflicto" }).eq("id", reservacionId).eq("estado", "cancelado");
+    if (cError) throw cError;
+    return;
+  }
+  if (reservacion.estado === "cancelado") return;
 
   const metodo = await metodoUsado(stripe, session);
   const { error } = await admin
@@ -74,6 +83,20 @@ async function marcarPagada(admin, stripe, session) {
     }
     throw error;
   }
+}
+
+// La persona sacó su ficha de OXXO (todavía sin pagar): se anota para que
+// su horario quede apartado mientras va a pagar.
+async function marcarFichaOxxo(admin, session) {
+  const reservacionId = session.metadata?.reservacion_id;
+  if (!reservacionId) return;
+  const { error } = await admin
+    .from("reservaciones")
+    .update({ metodo_pago: "oxxo" })
+    .eq("id", reservacionId)
+    .eq("estado", "pendiente_pago")
+    .eq("stripe_session_id", session.id);
+  if (error) throw error;
 }
 
 async function marcarCancelada(admin, session) {
@@ -124,6 +147,7 @@ export default async function handler(req, res) {
       // después en "async_payment_succeeded".
       case "checkout.session.completed":
         if (session.payment_status === "paid") await marcarPagada(admin, stripe, session);
+        else await marcarFichaOxxo(admin, session);
         break;
       case "checkout.session.async_payment_succeeded":
         await marcarPagada(admin, stripe, session);

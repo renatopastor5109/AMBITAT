@@ -172,7 +172,7 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: #EAC468;
+  background: #E8C162; /* mismo tono que el fondo de la ilustración */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -184,31 +184,35 @@ html, body {
   transform: scale(1.06);
   pointer-events: none;
 }
-.brotes-intro-planta {
+/* Árbol: misma imagen en dos capas, cortadas en la línea de la tierra (56.5%) */
+.brotes-intro-arbol {
   position: relative;
-  width: 150px;
-  height: 154px;
+  width: min(62vw, 270px);
+  aspect-ratio: 600 / 706;
 }
-.brotes-intro-planta img {
+.brotes-intro-arbol img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  opacity: 0;
-  transform-origin: 50% 85%;
-  animation: brotesCrece 0.55s cubic-bezier(.34,1.56,.64,1) forwards,
-             brotesDesvanece 0.25s ease forwards;
 }
-.brotes-intro-planta img:nth-child(1) { animation-delay: 0s, 0.5s; }
-.brotes-intro-planta img:nth-child(2) { animation-delay: 0.45s, 0.95s; }
-.brotes-intro-planta img:nth-child(3) { animation-delay: 0.9s, 99s; }
+.brotes-intro-arbol .raices {
+  clip-path: inset(56.5% 0 43.5% 0);
+  animation: brotesRaices 1s cubic-bezier(.25,.8,.3,1) 0.1s forwards;
+}
+.brotes-intro-arbol .copa {
+  clip-path: inset(56.5% 0 43.5% 0);
+  animation: brotesCopa 1s cubic-bezier(.25,.8,.3,1) 0.4s forwards;
+}
+@keyframes brotesRaices { to { clip-path: inset(56.5% 0 0 0); } }
+@keyframes brotesCopa { to { clip-path: inset(0 0 43.5% 0); } }
 .brotes-intro-logo {
   height: 46px;
   width: auto;
   margin-top: 22px;
   opacity: 0;
-  animation: brotesSube 0.6s ease 1s forwards;
+  animation: brotesSube 0.6s ease 1.3s forwards;
 }
 .brotes-intro-texto {
   font-family: 'Inter', sans-serif;
@@ -216,22 +220,15 @@ html, body {
   color: #6b6047;
   margin: 10px 0 0;
   opacity: 0;
-  animation: brotesSube 0.6s ease 1.2s forwards;
-}
-@keyframes brotesCrece {
-  from { opacity: 0; transform: scale(0.3) translateY(20px); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes brotesDesvanece {
-  to { opacity: 0; }
+  animation: brotesSube 0.6s ease 1.5s forwards;
 }
 @keyframes brotesSube {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .brotes-intro-planta img, .brotes-intro-logo, .brotes-intro-texto { animation: none; opacity: 1; }
-  .brotes-intro-planta img:not(:last-child) { opacity: 0; }
+  .brotes-intro-logo, .brotes-intro-texto { animation: none; opacity: 1; }
+  .brotes-intro-arbol img { animation: none; clip-path: none; }
   .brotes-intro { transition: opacity 0.2s ease; }
   .brotes-intro.saliendo { transform: none; }
 }
@@ -1020,8 +1017,8 @@ function IntroAnimada() {
   ); // visible -> saliendo -> fuera
   useEffect(() => {
     if (fase === "fuera") return;
-    const t1 = setTimeout(() => setFase("saliendo"), 2000);
-    const t2 = setTimeout(() => setFase("fuera"), 2500);
+    const t1 = setTimeout(() => setFase("saliendo"), 2500);
+    const t2 = setTimeout(() => setFase("fuera"), 3000);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
@@ -1034,10 +1031,10 @@ function IntroAnimada() {
       onClick={() => setFase("saliendo")}
       aria-hidden="true"
     >
-      <div className="brotes-intro-planta">
-        <img src="/stages/s1.png" alt="" />
-        <img src="/stages/s5.png" alt="" />
-        <img src="/stages/s8.png" alt="" />
+      {/* El árbol nace desde la tierra: las raíces bajan y la copa sube */}
+      <div className="brotes-intro-arbol">
+        <img className="raices" src="/intro-arbol.jpg" alt="" />
+        <img className="copa" src="/intro-arbol.jpg" alt="" />
       </div>
       <img className="brotes-intro-logo" src="/logo.png" alt="" />
       <p className="brotes-intro-texto">Cuida tus plantas, una foto a la vez.</p>

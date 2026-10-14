@@ -1071,18 +1071,42 @@ function leerErrorDeEnlace() {
   const params = new URLSearchParams(texto || window.location.search.slice(1));
   const codigo = params.get("error_code") || params.get("error");
   if (!codigo) return null;
-  const descripcion = (params.get("error_description") || "").toLowerCase();
+  const descripcionOriginal = params.get("error_description") || "";
+  const descripcion = descripcionOriginal.toLowerCase();
   window.history.replaceState({}, "", window.location.pathname);
+  let proveedor = null;
+  try {
+    proveedor = sessionStorage.getItem("ambitat-proveedor");
+    sessionStorage.removeItem("ambitat-proveedor");
+  } catch {}
+  // Detalle técnico (en chiquito) para poder diagnosticar si algo falla.
+  const detalle = `${codigo}${descripcionOriginal ? ": " + descripcionOriginal : ""}`.slice(0, 140);
+
   if (codigo === "otp_expired") {
     return { tipo: "correo", mensaje: "Ese enlace ya no sirve: ya se usó o expiró (solo funciona el último correo que te mandamos). Pide uno nuevo abajo." };
   }
-  if (descripcion.includes("already") && (descripcion.includes("linked") || descripcion.includes("exists"))) {
+  // Esa cuenta de Google (o su correo) ya existe en Ámbitat: hay que ENTRAR a
+  // ella en lugar de vincularla a la sesión sin cuenta.
+  if (
+    ["identity_already_exists", "email_exists", "user_already_exists"].includes(codigo) ||
+    (descripcion.includes("already") && /linked|exists|registered/.test(descripcion))
+  ) {
     return {
       tipo: "ya-existe",
-      mensaje: "Esa cuenta ya está registrada en Ámbitat. Toca otra vez el botón para entrar a ella (las plantas guardadas solo en este celular no se pasan).",
+      proveedor,
+      mensaje: "Ya tienes una cuenta con ese correo. Toca otra vez el botón para entrar a ella (las plantas guardadas solo en este celular no se pasan).",
     };
   }
-  return { tipo: "social", mensaje: "No se completó el inicio de sesión. Intenta de nuevo." };
+  if (codigo === "access_denied" || descripcion.includes("denied") || descripcion.includes("cancel")) {
+    return { tipo: "social", mensaje: "Se canceló el inicio de sesión. Puedes intentarlo otra vez cuando quieras." };
+  }
+  if (codigo.includes("state") || descripcion.includes("state") || descripcion.includes("flow")) {
+    return { tipo: "social", detalle, mensaje: "El inicio de sesión se abrió en otra ventana o tardó demasiado. Inténtalo otra vez desde aquí." };
+  }
+  if (descripcion.includes("exchange") || descripcion.includes("client") || descripcion.includes("provider")) {
+    return { tipo: "social", detalle, mensaje: "No pudimos conectar con Google en este momento. Entra con tu correo mientras lo arreglamos." };
+  }
+  return { tipo: "social", detalle, mensaje: "No se completó el inicio de sesión. Intenta de nuevo." };
 }
 
 // Logotipos de los botones de inicio de sesión (como piden Google, Apple y Facebook).
@@ -1196,9 +1220,13 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
       return;
     }
     setEnviando(proveedor);
+    try {
+      sessionStorage.setItem("ambitat-proveedor", proveedor);
+    } catch {}
     const options = { redirectTo: origen };
-    // Si ya usaba la app sin cuenta, se "vincula" para que sus plantas no se pierdan.
-    const vincular = esAnonimo && !entrarDirecto;
+    // Si ya usaba la app sin cuenta y tiene plantas, se "vincula" para que no se
+    // pierdan. Sin plantas no hay nada que pasar: se entra directo (más simple).
+    const vincular = esAnonimo && !entrarDirecto && plantasGuardadas > 0;
     let { error } = vincular
       ? await supabase.auth.linkIdentity({ provider: proveedor, options })
       : await supabase.auth.signInWithOAuth({ provider: proveedor, options });
@@ -1309,6 +1337,11 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
   const mensajes = (
     <>
       {error && <p role="alert" style={{ fontFamily: F, fontSize: 14, color: C.red, margin: "14px 0 0", lineHeight: 1.4, textAlign: "center" }}>{error}</p>}
+      {error && error === errorEnlace?.mensaje && errorEnlace?.detalle && (
+        <p style={{ fontFamily: F, fontSize: 11, color: C.inkSoft, margin: "6px 0 0", textAlign: "center", wordBreak: "break-word", opacity: 0.8 }}>
+          Detalle: {errorEnlace.detalle}
+        </p>
+      )}
       {aviso && <p style={{ fontFamily: F, fontSize: 14, color: C.green, margin: "14px 0 0", lineHeight: 1.4, textAlign: "center" }}>{aviso}</p>}
     </>
   );
@@ -2589,6 +2622,23 @@ export default function BrotesApp() {
   useEffect(() => {
     if (authEstado === "lista" && esAnonimo && errorCuenta && !cuentaMotivo) setCuentaMotivo("entrar");
   }, [authEstado, esAnonimo, errorCuenta, cuentaMotivo]);
+
+  // Caso común: la persona ya tenía cuenta con ese Google. Si en este celular
+  // no tiene plantas que perder, entramos a su cuenta solos, sin hacerle repetir.
+  const reintentoAutomatico = useRef(false);
+  useEffect(() => {
+    if (reintentoAutomatico.current) return;
+    if (errorCuenta?.tipo !== "ya-existe" || !errorCuenta.proveedor) return;
+    if (authEstado !== "lista" || !esAnonimo || loadingGarden || garden.length > 0) return;
+    reintentoAutomatico.current = true;
+    try {
+      sessionStorage.setItem("ambitat-proveedor", errorCuenta.proveedor);
+    } catch {}
+    setAviso("Entrando a tu cuenta...");
+    supabase.auth.signInWithOAuth({ provider: errorCuenta.proveedor, options: { redirectTo: window.location.origin } }).then(({ error }) => {
+      if (error) setAviso(null);
+    });
+  }, [errorCuenta, authEstado, esAnonimo, loadingGarden, garden.length]);
 
   useEffect(() => {
     if (!sesionPagoId || authEstado !== "lista") return;

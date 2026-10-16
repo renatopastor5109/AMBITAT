@@ -17,11 +17,15 @@ Para dejarlo configurado, sigue `GUIA-CUENTAS.md` y revisa `/admin → Ajustes`.
   - `reservar.js` — crea la reservación y el cobro en Stripe (el precio lo pone el servidor).
   - `webhook-stripe.js` — Stripe avisa aquí cuando un pago se completa.
   - `horarios-ocupados.js` — qué horas ya están tomadas en una fecha.
+  - `cancelar-reservacion.js` / `cambiar-reservacion.js` — el cliente cancela (con reembolso automático a tarjeta) o cambia su cita.
+  - `ficha-planta.js` — ficha de cuidado de cada planta (se genera una vez con IA y se guarda).
   - `enviar-recordatorios.js` — recordatorios de riego diarios (Vercel Cron).
   - `foto-vivero.js` — fotos de los viveros desde Google Maps.
   - `admin/` — datos del panel de citas (con contraseña).
-- `lib/` — piezas compartidas: precios y horarios (`servicio.js`), fechas en
-  hora de CDMX (`fechas.js`), lista de viveros (`viveros.js`).
+- `lib/` — piezas compartidas: precios (`servicio.js`), tu agenda de visitas
+  (`agenda.js`, se edita en `/admin → Agenda`), disponibilidad
+  (`horariosOcupados.js`), reglas de cancelación (`politicaCancelacion.js`),
+  fechas en hora de CDMX (`fechas.js`) y viveros (`viveros.js`).
 
 ## Variables de entorno (Vercel → Settings → Environment Variables)
 
@@ -35,6 +39,7 @@ Para dejarlo configurado, sigue `GUIA-CUENTAS.md` y revisa `/admin → Ajustes`.
 | `CRON_SECRET` | Obligatoria para que funcionen los recordatorios |
 | `ADMIN_PASSWORD` | Panel `/admin` (usa una contraseña larga) |
 | `GOOGLE_MAPS_API_KEY` | Opcional: fotos de los viveros |
+| `NEXT_PUBLIC_SITE_URL` | Opcional: la dirección de la app si cambias de dominio (por defecto `https://ambitat.vercel.app`) |
 
 Después de agregar o cambiar una variable hay que hacer **Redeploy**.
 
@@ -42,7 +47,8 @@ Después de agregar o cambiar una variable hay que hacer **Redeploy**.
 
 Los archivos `supabase-*.sql` crean las tablas y las reglas de seguridad.
 Todos se pueden volver a correr sin problema. El más reciente es
-`supabase-revision-seguridad.sql`.
+`supabase-revision-3.sql` (tu agenda configurable desde `/admin → Agenda` y
+datos para cancelaciones justas). Antes de ese, corre `supabase-revision-2.sql`.
 
 ## Desarrollo local (opcional)
 

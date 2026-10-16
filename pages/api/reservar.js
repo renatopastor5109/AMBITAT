@@ -1,15 +1,19 @@
 // Crea una reservación de mantenimiento Y su sesión de pago en Stripe.
 //
 // Todo pasa en el SERVIDOR a propósito: aquí se decide el precio, se revisa
-// que la fecha sea fin de semana, que la hora exista y que esté libre. Antes
+// que la fecha y hora estén en tu agenda (/admin → Agenda) y que haya lugar. Antes
 // la app creaba la reservación directo en la base de datos, y alguien que
 // supiera usar la consola del navegador podía ponerle otro precio o marcarla
 // como pagada.
 import Stripe from "stripe";
 import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
 import { obtenerHorasOcupadas, horaGanadaPorOtra, apartaHorario } from "../../lib/horariosOcupados";
-import { tamanoPorClave, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
-import { diaCDMX, diasEntre, esFechaValida, esFinDeSemana } from "../../lib/fechas";
+import { obtenerAgenda } from "../../lib/agendaServidor";
+import { diaPermitido } from "../../lib/agenda";
+import { tamanoPorClave, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
+import { diaCDMX, diasEntre, esFechaValida } from "../../lib/fechas";
+
+const DIAS_MINIMOS_OXXO = 3;
 
 function texto(v, max) {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
@@ -47,19 +51,22 @@ export default async function handler(req, res) {
   if (telefono.replace(/\D/g, "").length < 8) return res.status(400).json({ error: "Revisa tu número de teléfono." });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return res.status(400).json({ error: "Revisa tu correo." });
   if (!esFechaValida(fecha)) return res.status(400).json({ error: "Fecha inválida." });
-  if (!esFinDeSemana(fecha)) return res.status(400).json({ error: "El mantenimiento solo se agenda en sábado o domingo." });
-  const diasFaltan = diasEntre(diaCDMX(), fecha);
-  // Se reserva con al menos un día de anticipación (así nunca se cobra una
-  // hora de hoy que ya pasó, y hay tiempo de preparar la visita).
-  if (diasFaltan < 1) return res.status(400).json({ error: "Reserva a partir de mañana." });
-  if (diasFaltan > DIAS_MAXIMOS_ANTICIPACION) {
-    return res.status(400).json({ error: `Solo se puede reservar con hasta ${DIAS_MAXIMOS_ANTICIPACION} días de anticipación.` });
-  }
-  if (!HORARIOS_DISPONIBLES.includes(hora)) return res.status(400).json({ error: "Horario no disponible." });
 
   const admin = clienteAdmin();
 
   try {
+    const agenda = await obtenerAgenda(admin);
+    if (!diaPermitido(agenda, fecha)) return res.status(400).json({ error: "Ese día no hay visitas. Elige otra fecha." });
+    const diasFaltan = diasEntre(diaCDMX(), fecha);
+    // Siempre con anticipación (nunca se cobra una hora de hoy que ya pasó).
+    if (diasFaltan < agenda.anticipacionDias) {
+      return res.status(400).json({ error: agenda.anticipacionDias === 1 ? "Reserva a partir de mañana." : `Reserva con al menos ${agenda.anticipacionDias} días de anticipación.` });
+    }
+    if (diasFaltan > DIAS_MAXIMOS_ANTICIPACION) {
+      return res.status(400).json({ error: `Solo se puede reservar con hasta ${DIAS_MAXIMOS_ANTICIPACION} días de anticipación.` });
+    }
+    if (!agenda.horarios.includes(hora)) return res.status(400).json({ error: "Horario no disponible." });
+
     // Máximo 3 reservaciones pendientes de pago a la vez por persona, para que
     // nadie pueda apartar todos los horarios sin pagar.
     const { data: pendientes, error: pendError } = await admin
@@ -72,7 +79,7 @@ export default async function handler(req, res) {
       return res.status(429).json({ error: "Tienes reservaciones esperando pago. Págalas o espera a que venzan para reservar otra." });
     }
 
-    const ocupadas = await obtenerHorasOcupadas(admin, fecha);
+    const ocupadas = await obtenerHorasOcupadas(admin, fecha, agenda);
     if (ocupadas.includes(hora)) {
       return res.status(409).json({ error: "Ese horario se acaba de ocupar. Elige otra hora." });
     }
@@ -91,14 +98,7 @@ export default async function handler(req, res) {
       precio_centavos: tamano.precio,
       estado: "pendiente_pago",
     };
-    let { data: reservacion, error: insertError } = await admin.from("reservaciones").insert(fila).select().single();
-    // Si todavía no se corre el SQL que agrega la columna "tamano", se guarda
-    // el tamaño dentro de las notas para no perder la reservación.
-    if (insertError && insertError.code === "42703") {
-      const { tamano: _sinColumna, ...resto } = fila;
-      resto.notas = `[Jardín ${tamano.nombre.toLowerCase()}]${notas ? " " + notas : ""}`;
-      ({ data: reservacion, error: insertError } = await admin.from("reservaciones").insert(resto).select().single());
-    }
+    const { data: reservacion, error: insertError } = await admin.from("reservaciones").insert(fila).select().single();
 
     if (insertError || !reservacion) {
       console.error("Error creando reservación:", insertError);
@@ -106,7 +106,13 @@ export default async function handler(req, res) {
     }
 
     // Si otra persona apartó la misma hora en el mismo instante, gana la primera.
-    if (await horaGanadaPorOtra(admin, reservacion)) {
+    let perdio = true;
+    try {
+      perdio = await horaGanadaPorOtra(admin, reservacion, agenda);
+    } catch (err) {
+      console.error("No se pudo revisar el horario:", err);
+    }
+    if (perdio) {
       await admin.from("reservaciones").update({ estado: "cancelado" }).eq("id", reservacion.id);
       return res.status(409).json({ error: "Ese horario se acaba de ocupar. Elige otra hora." });
     }
@@ -117,12 +123,14 @@ export default async function handler(req, res) {
       const origin = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
-        payment_method_types: ["card", "oxxo"],
+        // OXXO solo si la visita es en 3 días o más: la ficha dura 2 días y
+        // Stripe tarda hasta 1 día en confirmar (así nunca se paga una cita pasada).
+        payment_method_types: diasFaltan >= DIAS_MINIMOS_OXXO ? ["card", "oxxo"] : ["card"],
         // La página de pago vence en 30 min (lo mínimo que permite Stripe) para
         // que los pagos abandonados liberen el horario rápido. La ficha de
         // OXXO dura 2 días y el horario se le aparta 5 (lib/horariosOcupados.js).
         expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
-        payment_method_options: { oxxo: { expires_after_days: 2 } },
+        ...(diasFaltan >= DIAS_MINIMOS_OXXO ? { payment_method_options: { oxxo: { expires_after_days: 2 } } } : {}),
         customer_email: correo,
         line_items: [
           {

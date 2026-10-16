@@ -5,6 +5,7 @@ import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
 import { diaCDMX, sumarDias, diaSemana } from "../lib/fechas";
 import { tamanoPorClave } from "../lib/servicio";
+import { AGENDA_INICIAL, HORARIOS_POSIBLES, NOMBRES_DIAS_SEMANA, normalizarAgenda } from "../lib/agenda";
 
 const C = {
   bg: "#EAC468",
@@ -22,12 +23,18 @@ const C = {
 
 const F = "'Inter', sans-serif";
 
+const MOTIVOS_CONFLICTO = {
+  sin_lugar: "Pagó cuando ese horario o ese día ya estaba lleno.",
+  pago_tras_cancelar: "Pagó una reservación que ya había cancelado.",
+  fecha_pasada: "El pago llegó cuando la fecha de la visita ya había pasado.",
+};
+
 const ESTADOS = {
   pagado: { label: "Pagado", color: C.green },
   pendiente_pago: { label: "Pendiente de pago", color: "#8a6110" },
   completado: { label: "Completada", color: C.blue },
   cancelado: { label: "Cancelado", color: C.red },
-  conflicto: { label: "Horario duplicado · reembolsar", color: C.red },
+  conflicto: { label: "Por resolver", color: C.red },
 };
 
 const CLAVE_SESION = "ambitat-admin-pw";
@@ -46,7 +53,7 @@ function guardarSesion(v) {
   } catch {}
 }
 
-// "YYYY-MM-DD" de hoy en la hora local del teléfono/computadora
+// "YYYY-MM-DD" de hoy en hora de la Ciudad de México
 const hoyISO = () => diaCDMX();
 // "1:00 pm" -> 780, para poder ordenar las citas por hora
 function horaAMinutos(h) {
@@ -76,7 +83,9 @@ export default function Admin() {
   const [reservaciones, setReservaciones] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
-  const [vista, setVista] = useState("calendario"); // calendario | proximas | historial | ajustes
+  const [vista, setVista] = useState("calendario"); // calendario | proximas | historial | agenda | ajustes
+  const [agenda, setAgenda] = useState(null);
+  const [agendaError, setAgendaError] = useState(null);
   const [verPendientes, setVerPendientes] = useState(false);
   const [actualizando, setActualizando] = useState(null);
 
@@ -95,6 +104,15 @@ export default function Admin() {
       setPassword(pw);
       guardarSesion(pw);
       setReservaciones(data.reservaciones);
+      fetch("/api/admin/agenda", { headers: { "x-admin-password": pw } })
+        .then(async (r) => {
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error);
+          setAgenda(normalizarAgenda(d.agenda || AGENDA_INICIAL));
+          setAgendaError(null);
+        })
+        // Si no se pudo leer, NO se usan los valores de fábrica (para no guardarlos encima por error).
+        .catch((e) => setAgendaError(e.message || "No se pudo leer tu agenda. Toca Actualizar."));
     } catch (err) {
       setError(err.message);
       if (!reservaciones) {
@@ -124,6 +142,34 @@ export default function Admin() {
     setActualizando(null);
   }
 
+  // Guarda la agenda. Regresa true si se guardó.
+  async function guardarAgenda(nueva) {
+    try {
+      const res = await fetch("/api/admin/agenda", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ agenda: nueva }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo guardar");
+      setAgenda(data.agenda);
+      return true;
+    } catch (err) {
+      alert(err.message);
+      return false;
+    }
+  }
+
+  function alternarBloqueo(fecha) {
+    if (!agenda) return;
+    const bloqueada = agenda.fechasBloqueadas.includes(fecha);
+    if (!bloqueada && !window.confirm(`¿Bloquear el ${fechaLarga(fecha).toLowerCase()}? Nadie podrá reservar ese día. Las citas que ya tengas ese día se quedan.`)) return;
+    guardarAgenda({
+      ...agenda,
+      fechasBloqueadas: bloqueada ? agenda.fechasBloqueadas.filter((f) => f !== fecha) : [...agenda.fechasBloqueadas, fecha],
+    });
+  }
+
   function salir() {
     guardarSesion("");
     setPassword("");
@@ -135,13 +181,12 @@ export default function Admin() {
 
   const resumen = useMemo(() => {
     if (!reservaciones) return null;
-    const dia = diaSemana(hoy); // 0 domingo, 6 sábado
-    const finde = dia === 0 ? [hoy] : [sumarDias(hoy, 6 - dia), sumarDias(hoy, 7 - dia)];
+    const en7Dias = sumarDias(hoy, 6);
     const confirmadas = reservaciones.filter((r) => r.estado === "pagado");
     return {
-      esteFinde: confirmadas.filter((r) => finde.includes(r.fecha)).length,
+      proximos7: confirmadas.filter((r) => r.fecha >= hoy && r.fecha <= en7Dias).length,
       proximas: confirmadas.filter((r) => r.fecha >= hoy).length,
-      pendientes: reservaciones.filter((r) => r.estado === "pendiente_pago" && r.fecha >= hoy).length,
+      pendientes: reservaciones.filter((r) => r.estado === "pendiente_pago" && r.metodo_pago === "oxxo" && r.fecha >= hoy).length,
       conflictos: reservaciones.filter((r) => r.estado === "conflicto").length,
       depositos: reservaciones.filter((r) => r.reembolso_estado === "pendiente_manual").length,
       cobrado: reservaciones
@@ -234,8 +279,8 @@ export default function Admin() {
 
             {resumen.conflictos > 0 && (
               <div style={{ background: C.red, color: "#fff", borderRadius: 14, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, lineHeight: 1.4 }}>
-                <strong>{resumen.conflictos === 1 ? "1 cita pagó" : `${resumen.conflictos} citas pagaron`} un horario que ya estaba ocupado</strong>{" "}
-                (normalmente un pago en OXXO que llegó tarde). Escríbele al cliente para cambiar el horario o hazle el reembolso desde Stripe.
+                <strong>{resumen.conflictos === 1 ? "1 cita pagada está" : `${resumen.conflictos} citas pagadas están`} por resolver</strong>{" "}
+                (normalmente un pago en OXXO que llegó tarde). Búscala en Próximas: dice el motivo. Escríbele al cliente y, cuando lo resuelvas, márcala con los botones de la cita.
               </div>
             )}
 
@@ -247,7 +292,7 @@ export default function Admin() {
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
-              <Stat valor={resumen.esteFinde} label="Citas este fin de semana" destacado />
+              <Stat valor={resumen.proximos7} label="Citas en los próximos 7 días" destacado />
               <Stat valor={resumen.proximas} label="Próximas confirmadas" />
               <Stat valor={resumen.pendientes} label="Esperando pago (OXXO)" />
               <Stat valor={`$${(resumen.cobrado / 100).toLocaleString("es-MX")}`} label="Cobrado en total" />
@@ -258,12 +303,13 @@ export default function Admin() {
                 ["calendario", "Calendario"],
                 ["proximas", "Próximas"],
                 ["historial", "Historial"],
+                ["agenda", "Agenda"],
                 ["ajustes", "Ajustes"],
               ].map(([k, l]) => (
                 <button
                   key={k}
                   onClick={() => setVista(k)}
-                  style={{ flex: 1, border: "none", borderRadius: 11, padding: "10px 0", fontFamily: F, fontWeight: 700, fontSize: 13.5, cursor: "pointer", background: vista === k ? C.green : "transparent", color: vista === k ? "#fff" : C.inkSoft }}
+                  style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", border: "none", borderRadius: 11, padding: "10px 2px", fontFamily: F, fontWeight: 700, fontSize: "clamp(11px, 3.2vw, 13.5px)", cursor: "pointer", background: vista === k ? C.green : "transparent", color: vista === k ? "#fff" : C.inkSoft }}
                 >
                   {l}
                 </button>
@@ -277,10 +323,23 @@ export default function Admin() {
               </label>
             )}
 
-            {vista === "ajustes" ? (
+            {vista === "agenda" ? (
+              agenda ? (
+                <AgendaConfig agenda={agenda} onGuardar={guardarAgenda} />
+              ) : (
+                <p style={{ textAlign: "center", color: agendaError ? C.red : C.inkSoft, fontSize: 14 }}>{agendaError || "Cargando..."}</p>
+              )
+            ) : vista === "ajustes" ? (
               <Ajustes password={password} />
             ) : vista === "calendario" ? (
-              <Calendario reservaciones={reservaciones} hoy={hoy} actualizando={actualizando} onCambiarEstado={cambiarEstado} />
+              <Calendario
+                reservaciones={reservaciones}
+                hoy={hoy}
+                actualizando={actualizando}
+                onCambiarEstado={cambiarEstado}
+                agenda={agenda}
+                onAlternarBloqueo={alternarBloqueo}
+              />
             ) : grupos.length === 0 ? (
               <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "40px 0" }}>
                 {vista === "proximas" ? "No tienes citas próximas por ahora." : "Todavía no hay citas en el historial."}
@@ -419,7 +478,7 @@ function Ajustes({ password }) {
       <div style={tarjeta}>
         <p style={titulo}>Variables de Vercel</p>
         {datos.variables.map((v) => (
-          <Fila key={v.nombre} ok={v.lista} opcional={v.nombre === "GOOGLE_MAPS_API_KEY"} nombre={v.nombre} detalle={v.para} />
+          <Fila key={v.nombre} ok={v.lista} opcional={v.nombre === "GOOGLE_MAPS_API_KEY" || v.nombre === "NEXT_PUBLIC_SITE_URL"} nombre={v.nombre} detalle={v.para} />
         ))}
       </div>
       <button onClick={revisar} style={{ ...botonChico, width: "100%", padding: "12px 0" }}>Volver a revisar</button>
@@ -427,10 +486,152 @@ function Ajustes({ password }) {
   );
 }
 
+// ---------- Agenda: cuántas visitas aceptas, qué días y a qué horas ----------
+function AgendaConfig({ agenda, onGuardar }) {
+  const [a, setA] = useState(agenda);
+  const [guardando, setGuardando] = useState(false);
+  const [listo, setListo] = useState(false);
+  const [nuevaFecha, setNuevaFecha] = useState("");
+  useEffect(() => setA(agenda), [agenda]);
+  const cambiar = (campo, valor) => {
+    setListo(false);
+    setA((x) => ({ ...x, [campo]: valor }));
+  };
+  const alternar = (campo, v) => cambiar(campo, a[campo].includes(v) ? a[campo].filter((x) => x !== v) : [...a[campo], v]);
+  const hayCambios = JSON.stringify(normalizarAgenda(a)) !== JSON.stringify(agenda);
+
+  const tarjeta = { background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 12 };
+  const titulo = { fontWeight: 800, fontSize: 15, color: C.ink, margin: "0 0 4px" };
+  const ayuda = { fontSize: 12.5, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 };
+  const pastilla = (activa) => ({
+    border: activa ? "2px solid " + C.green : "1px solid " + C.cardLine,
+    background: activa ? C.green : C.tileBg,
+    color: activa ? "#fff" : C.ink,
+    borderRadius: 12,
+    padding: "9px 12px",
+    fontFamily: F,
+    fontWeight: 700,
+    fontSize: 13,
+    cursor: "pointer",
+  });
+  const Contador = ({ campo, min, max, sufijo }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <button aria-label="Menos" onClick={() => cambiar(campo, Math.max(min, a[campo] - 1))} style={{ ...botonChico, width: 44, height: 44, fontSize: 20, background: C.tileBg }}>−</button>
+      <span style={{ fontSize: 22, fontWeight: 800, color: C.ink, minWidth: 30, textAlign: "center" }}>{a[campo]}</span>
+      <button aria-label="Más" onClick={() => cambiar(campo, Math.min(max, a[campo] + 1))} style={{ ...botonChico, width: 44, height: 44, fontSize: 20, background: C.tileBg }}>+</button>
+      <span style={{ fontSize: 13, color: C.inkSoft }}>{sufijo}</span>
+    </div>
+  );
+
+  async function guardar() {
+    setGuardando(true);
+    const ok = await onGuardar(normalizarAgenda(a));
+    setGuardando(false);
+    if (ok) setListo(true);
+  }
+
+  return (
+    <div>
+      <div style={tarjeta}>
+        <p style={titulo}>Visitas a la misma hora</p>
+        <p style={ayuda}>Cuántos clientes pueden reservar exactamente el mismo horario. Si trabajas solo, déjalo en 1.</p>
+        <Contador campo="capacidadPorHorario" min={1} max={10} sufijo={a.capacidadPorHorario === 1 ? "visita por horario" : "visitas por horario"} />
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Máximo de visitas por día</p>
+        <p style={ayuda}>Cuando un día llega a este número, ya no se puede reservar ninguna hora de ese día.</p>
+        <Contador campo="maximoPorDia" min={1} max={30} sufijo={a.maximoPorDia === 1 ? "visita al día" : "visitas al día"} />
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Días que trabajas</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+          {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+            <button key={d} onClick={() => alternar("diasSemana", d)} aria-pressed={a.diasSemana.includes(d)} style={pastilla(a.diasSemana.includes(d))}>
+              {NOMBRES_DIAS_SEMANA[d]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Horarios</p>
+        <p style={ayuda}>La hora a la que llegas. Toca para activar o quitar.</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {HORARIOS_POSIBLES.map((h) => (
+            <button key={h} onClick={() => alternar("horarios", h)} aria-pressed={a.horarios.includes(h)} style={pastilla(a.horarios.includes(h))}>
+              {h}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Anticipación mínima</p>
+        <p style={ayuda}>Con cuántos días de anticipación hay que reservar.</p>
+        <Contador campo="anticipacionDias" min={1} max={14} sufijo={a.anticipacionDias === 1 ? "día (desde mañana)" : "días"} />
+      </div>
+
+      <div style={tarjeta}>
+        <p style={titulo}>Días bloqueados</p>
+        <p style={ayuda}>Vacaciones o días que no puedes. También los bloqueas tocando el día en el Calendario.</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="date"
+            value={nuevaFecha}
+            min={hoyISO()}
+            onChange={(e) => setNuevaFecha(e.target.value)}
+            style={{ flex: 1, minWidth: 0, border: "1px solid " + C.cardLine, borderRadius: 12, padding: "10px 12px", fontFamily: F, fontSize: 16, color: C.ink, background: C.tileBg }}
+          />
+          <button
+            disabled={!nuevaFecha}
+            onClick={() => {
+              if (nuevaFecha && !a.fechasBloqueadas.includes(nuevaFecha)) cambiar("fechasBloqueadas", [...a.fechasBloqueadas, nuevaFecha].sort());
+              setNuevaFecha("");
+            }}
+            style={{ ...botonChico, background: C.green, color: "#fff", padding: "0 16px" }}
+          >
+            Bloquear
+          </button>
+        </div>
+        {a.fechasBloqueadas.length === 0 ? (
+          <p style={{ fontSize: 13, color: C.inkSoft, margin: "10px 0 0" }}>No tienes días bloqueados.</p>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+            {a.fechasBloqueadas.map((f) => (
+              <span key={f} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.tileBg, borderRadius: 999, padding: "6px 6px 6px 12px", fontSize: 13, color: C.ink }}>
+                {fechaLarga(f)}
+                <button onClick={() => alternar("fechasBloqueadas", f)} aria-label={`Desbloquear ${f}`} style={{ border: "none", background: C.card, borderRadius: "50%", width: 24, height: 24, cursor: "pointer", color: C.red, fontWeight: 800 }}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(a.diasSemana.length === 0 || a.horarios.length === 0) && (
+        <p style={{ color: C.red, fontSize: 13, margin: "0 4px 10px" }}>Ojo: sin días u horarios activos nadie podrá reservar.</p>
+      )}
+      <button
+        onClick={guardar}
+        disabled={guardando || !hayCambios}
+        style={{ width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: hayCambios ? C.green : C.cardLine, color: hayCambios ? "#fff" : C.inkSoft, fontFamily: F, fontWeight: 800, fontSize: 15, cursor: hayCambios ? "pointer" : "default" }}
+      >
+        {guardando ? "Guardando..." : hayCambios ? "Guardar cambios" : listo ? "Guardado ✓" : "Sin cambios"}
+      </button>
+      <p style={{ fontSize: 12, color: C.inkSoft, margin: "10px 4px 0", lineHeight: 1.45 }}>
+        Los cambios aplican para reservaciones nuevas. Las citas que ya tienes no se mueven.
+      </p>
+    </div>
+  );
+}
+
 // ---------- Calendario mensual de citas ----------
 const NOMBRES_DIAS = ["L", "M", "M", "J", "V", "S", "D"];
 
-function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado }) {
+function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado, agenda, onAlternarBloqueo }) {
   const [mes, setMes] = useState(hoy.slice(0, 7)); // "YYYY-MM"
   const [seleccionado, setSeleccionado] = useState(hoy);
 
@@ -508,13 +709,15 @@ function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado }) {
             const citas = porDia[f] || [];
             const esHoy = f === hoy;
             const sel = f === seleccionado;
-            const finde = i % 7 >= 5;
+            // Días en que trabajas (según tu agenda) y días bloqueados
+            const trabaja = agenda ? agenda.diasSemana.includes(diaSemana(f)) : i % 7 >= 5;
+            const bloqueado = !!agenda?.fechasBloqueadas.includes(f);
             const pasado = f < hoy;
             return (
               <button
                 key={f}
                 onClick={() => setSeleccionado(f)}
-                aria-label={`${fechaLarga(f)}: ${citas.length} ${citas.length === 1 ? "cita" : "citas"}`}
+                aria-label={`${fechaLarga(f)}: ${citas.length} ${citas.length === 1 ? "cita" : "citas"}${bloqueado ? " (bloqueado)" : ""}`}
                 aria-pressed={sel}
                 style={{
                   position: "relative",
@@ -522,7 +725,7 @@ function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado }) {
                   minHeight: 42,
                   border: esHoy && !sel ? "2px solid " + C.green : "none",
                   borderRadius: 12,
-                  background: sel ? C.green : finde ? "rgba(63,93,62,0.08)" : "transparent",
+                  background: sel ? C.green : bloqueado ? "repeating-linear-gradient(135deg, rgba(156,59,46,0.10) 0 4px, transparent 4px 8px)" : trabaja ? "rgba(63,93,62,0.08)" : "transparent",
                   color: sel ? "#fff" : pasado ? "#a89c80" : C.ink,
                   cursor: "pointer",
                   fontFamily: F,
@@ -534,7 +737,7 @@ function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado }) {
                   padding: 0,
                 }}
               >
-                <span style={{ fontSize: 14, fontWeight: citas.length ? 800 : 500 }}>{Number(f.slice(8))}</span>
+                <span style={{ fontSize: 14, fontWeight: citas.length ? 800 : 500, textDecoration: bloqueado && !sel ? "line-through" : "none" }}>{Number(f.slice(8))}</span>
                 <span style={{ display: "flex", gap: 3, height: 6 }}>
                   {citas.slice(0, 4).map((r) => (
                     <span
@@ -567,6 +770,14 @@ function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado }) {
           {delDia.length} {delDia.length === 1 ? "cita" : "citas"}
         </p>
       </div>
+      {agenda && seleccionado >= hoy && (
+        <button
+          onClick={() => onAlternarBloqueo(seleccionado)}
+          style={{ ...botonChico, width: "100%", marginBottom: 10, padding: "11px 0", color: agenda.fechasBloqueadas.includes(seleccionado) ? C.green : C.red }}
+        >
+          {agenda.fechasBloqueadas.includes(seleccionado) ? "Desbloquear este día (volver a aceptar citas)" : "Bloquear este día (no aceptar citas)"}
+        </button>
+      )}
       {delDia.length === 0 ? (
         <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "24px 0" }}>
           Sin citas este día{canceladasDelDia ? ` (${canceladasDelDia} cancelada${canceladasDelDia > 1 ? "s" : ""})` : ""}.
@@ -636,13 +847,23 @@ function Cita({ r, actualizando, onCambiarEstado }) {
               : "Cancelada por el cliente · sin reembolso"}
           </p>
         )}
-        {r.reembolso_estado === "pendiente_manual" && (
+        {r.estado === "conflicto" && (
+          <p style={{ fontSize: 12.5, fontWeight: 700, margin: 0, color: C.red }}>
+            {MOTIVOS_CONFLICTO[r.conflicto_motivo] || "Pagó un horario que ya estaba ocupado."} Pagó con {r.metodo_pago === "oxxo" ? "OXXO (reembolso por depósito)" : "tarjeta (reembolso desde Stripe)"}.
+          </p>
+        )}
+        {r.reembolso_estado === "revisar" && (
+          <p style={{ fontSize: 12.5, fontWeight: 700, margin: 0, color: C.red }}>
+            Se cortó la conexión con Stripe al reembolsar: revisa en Stripe si el reembolso se hizo. Si no, hazlo desde ahí.
+          </p>
+        )}
+        {(r.reembolso_estado === "pendiente_manual" || r.reembolso_estado === "revisar") && (
           <button
-            onClick={() => window.confirm("¿Ya le depositaste a este cliente?") && onCambiarEstado(r.id, "reembolso_depositado")}
+            onClick={() => window.confirm("¿Ya le regresaste su dinero a este cliente?") && onCambiarEstado(r.id, "reembolso_depositado")}
             disabled={actualizando}
             style={{ alignSelf: "flex-start", marginTop: 4, padding: "8px 12px", borderRadius: 10, border: "none", background: C.green, color: "#fff", fontFamily: F, fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}
           >
-            {actualizando ? "..." : "Ya le deposité"}
+            {actualizando ? "..." : r.reembolso_estado === "revisar" ? "Ya está reembolsado" : "Ya le deposité"}
           </button>
         )}
       </div>
@@ -656,6 +877,16 @@ function Cita({ r, actualizando, onCambiarEstado }) {
         <a href={linkWhatsApp(r)} target="_blank" rel="noopener noreferrer" style={{ ...accion, background: C.tileBg, color: C.ink }}>
           WhatsApp
         </a>
+        {r.estado === "conflicto" && (
+          <>
+            <button onClick={() => window.confirm("¿Ya acordaste la visita con el cliente? (si le cambiaste la fecha, la verás igual; avísale)") && onCambiarEstado(r.id, "pagado")} disabled={actualizando} style={{ ...accion, background: C.green, color: "#fff" }}>
+              Mantener la cita
+            </button>
+            <button onClick={() => window.confirm("¿Ya le regresaste todo su dinero?") && onCambiarEstado(r.id, "cancelado")} disabled={actualizando} style={{ ...accion, background: C.tileBg, color: C.red }}>
+              Ya le reembolsé
+            </button>
+          </>
+        )}
         {r.estado === "pagado" && (
           <button onClick={() => onCambiarEstado(r.id, "completado")} disabled={actualizando} style={{ ...accion, background: C.green, color: "#fff" }}>
             {actualizando ? "..." : "Marcar completada"}

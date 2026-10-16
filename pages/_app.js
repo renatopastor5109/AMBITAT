@@ -7,7 +7,7 @@ export default function App({ Component, pageProps }) {
       <Head>
         <title>Ámbitat · Cuida tus plantas</title>
         <meta name="description" content="Identifica tus plantas con una foto, recibe recordatorios de riego y reserva mantenimiento a domicilio en CDMX." />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#EAC468" />
         {/* Para poder agregarla a la pantalla de inicio (y en iPhone, recibir recordatorios) */}
         <link rel="manifest" href="/manifest.json" />

@@ -4,6 +4,10 @@
 // confiar en el contenido.
 import Stripe from "stripe";
 import { clienteAdmin } from "../../lib/usuarioServidor";
+import { obtenerAgenda } from "../../lib/agendaServidor";
+import { cabeCitaPagada } from "../../lib/horariosOcupados";
+import { inicioCita } from "../../lib/politicaCancelacion";
+import { actualizarConExtras } from "../../lib/columnasOpcionales";
 
 export const config = {
   api: {
@@ -53,35 +57,40 @@ async function marcarPagada(admin, stripe, session) {
     return;
   }
   if (reservacion.estado === "pagado" || reservacion.estado === "completado" || reservacion.estado === "conflicto") return; // ya procesado
-  // (Si ya tiene reembolso_estado, se canceló DESPUÉS de pagar: es un aviso repetido de Stripe.)
-  if (reservacion.estado === "cancelado" && !reservacion.reembolso_estado) {
-    // Pagó (p. ej. en OXXO) una reservación que ya había cancelado: se marca
-    // para que en el panel veas que hay que devolverle el dinero.
-    const { error: cError } = await admin.from("reservaciones").update({ estado: "conflicto" }).eq("id", reservacionId).eq("estado", "cancelado");
-    if (cError) throw cError;
-    return;
-  }
-  if (reservacion.estado === "cancelado") return;
+  // Si ya tiene reembolso_estado, se canceló DESPUÉS de pagar: es un aviso repetido de Stripe.
+  if (reservacion.estado === "cancelado" && reservacion.reembolso_estado) return;
 
   const metodo = await metodoUsado(stripe, session);
-  const { error } = await admin
-    .from("reservaciones")
-    .update({ estado: "pagado", metodo_pago: metodo })
-    .eq("id", reservacionId);
+  const ahora = new Date().toISOString();
 
-  if (error) {
-    // 23505 = otra persona ya pagó ese mismo horario (índice único). Pasa si
-    // un pago en OXXO llega tarde. Se marca para que lo veas en el panel y
-    // le hagas reembolso o le ofrezcas otro horario.
-    if (error.code === "23505") {
-      const { error: conflictoError } = await admin
-        .from("reservaciones")
-        .update({ estado: "conflicto", metodo_pago: metodo })
-        .eq("id", reservacionId);
-      if (conflictoError) throw conflictoError;
-      return;
-    }
-    throw error;
+  // Cita "por resolver": el dinero llegó pero hay que moverla o reembolsar.
+  // Lo verás en rojo en el panel con el motivo.
+  async function marcarConflicto(motivo, estadoActual) {
+    const { error } = await actualizarConExtras(
+      (campos) => admin.from("reservaciones").update(campos).eq("id", reservacionId).eq("estado", estadoActual),
+      { estado: "conflicto", metodo_pago: metodo },
+      { conflicto_motivo: motivo, pagado_en: ahora }
+    );
+    if (error) throw error;
+  }
+
+  // Pagó (p. ej. en OXXO) una reservación que ya había cancelado.
+  if (reservacion.estado === "cancelado") return marcarConflicto("pago_tras_cancelar", "cancelado");
+  // El pago llegó cuando la fecha de la visita ya pasó (p. ej. OXXO muy tarde).
+  if (inicioCita(reservacion.fecha, reservacion.hora) <= Date.now()) return marcarConflicto("fecha_pasada", reservacion.estado);
+  // Mientras pagaba se llenó ese horario o ese día.
+  if (!(await cabeCitaPagada(admin, reservacion, await obtenerAgenda(admin)))) return marcarConflicto("sin_lugar", reservacion.estado);
+
+  const { data, error } = await actualizarConExtras(
+    (campos) => admin.from("reservaciones").update(campos).eq("id", reservacionId).eq("estado", reservacion.estado).select("id"),
+    { estado: "pagado", metodo_pago: metodo },
+    { pagado_en: ahora }
+  );
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    // Cambió mientras tanto (p. ej. la canceló en ese momento): se revisa de nuevo.
+    const { data: actual } = await admin.from("reservaciones").select("estado, reembolso_estado").eq("id", reservacionId).maybeSingle();
+    if (actual?.estado === "cancelado" && !actual.reembolso_estado) await marcarConflicto("pago_tras_cancelar", "cancelado");
   }
 }
 

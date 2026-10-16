@@ -3,7 +3,7 @@
 // solos de lib/servicio.js, así que siempre coinciden con la Tienda.
 import PaginaLegal, { Dato, Seccion, Tabla, Resumen } from "../components/PaginaLegal";
 import { RESPONSABLE as R } from "../lib/legal";
-import { TAMANOS, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION, formatoPrecio } from "../lib/servicio";
+import { TAMANOS, DIAS_MAXIMOS_ANTICIPACION, formatoPrecio } from "../lib/servicio";
 
 export default function Terminos() {
   return (
@@ -126,13 +126,13 @@ export default function Terminos() {
         <h3>8.2 Zona y horarios</h3>
         <ul>
           <li>Damos servicio dentro de la Ciudad de México. Si tu dirección queda fuera de nuestra zona, te contactamos para reprogramar o devolverte tu dinero completo.</li>
-          <li>Las visitas son sábados y domingos, en los horarios que muestra la app ({HORARIOS_DISPONIBLES.join(", ")}), con hasta {DIAS_MAXIMOS_ANTICIPACION} días de anticipación.</li>
+          <li>Las visitas se agendan en los días y horarios disponibles que muestra la app al reservar, con hasta {DIAS_MAXIMOS_ANTICIPACION} días de anticipación.</li>
           <li>La hora de llegada puede variar hasta 30 minutos por el tráfico. Si vamos a llegar más tarde, te avisamos.</li>
         </ul>
 
         <h3>8.3 Pago y confirmación</h3>
         <ul>
-          <li>El servicio se paga por adelantado con tarjeta de crédito o débito, o en efectivo en OXXO, a través de Stripe.</li>
+          <li>El servicio se paga por adelantado con tarjeta de crédito o débito, o en efectivo en OXXO, a través de Stripe. El pago en OXXO solo está disponible si tu visita es dentro de 3 días o más.</li>
           <li>Con tarjeta, tu cita queda confirmada al aprobarse el pago. En OXXO tienes 2 días para pagar; tu cita se confirma cuando recibimos el pago.</li>
           <li>Si tu pago en OXXO llega cuando ese horario ya fue tomado por alguien más, te contactamos para darte otro horario o devolverte tu dinero completo, como prefieras.</li>
           <li>Tu comprobante aparece en la app. Si necesitas factura (CFDI), pídela a <Dato v={R.correo} /> dentro del mismo mes de tu pago, con tus datos fiscales.</li>
@@ -153,7 +153,7 @@ export default function Terminos() {
             ["Cancelas dentro de los 5 días hábiles siguientes a tu pago y la visita aún no se realiza", "Reembolso del 100%"],
             ["Cancelas 48 horas o más antes de tu cita", "Reembolso del 100%"],
             ["Cancelas con menos de 48 horas de anticipación (fuera de los 5 días hábiles)", "Reembolso del 50%"],
-            ["Cambias la fecha u hora 24 horas o más antes de tu cita", "Sin costo, según disponibilidad"],
+            ["Cambias la fecha u hora 24 horas o más antes de tu cita", "Sin costo, según disponibilidad. Si después cancelas, el reembolso se calcula con la fecha más cercana que tuvo tu cita"],
             ["No hay nadie para recibirnos o no podemos entrar (esperamos 20 minutos e intentamos contactarte)", "Sin reembolso; podemos ofrecerte otra fecha"],
             ["Nosotros cancelamos (clima, causas de fuerza mayor u otra razón nuestra)", "Tú eliges: nueva fecha o reembolso del 100%"],
           ]}

@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
 import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../lib/servicio";
 import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto, diasDesdeRiego, sumarDias, diaSemana } from "../lib/fechas";
-import { politicaCancelacion, puedeCambiarFecha } from "../lib/politicaCancelacion";
+import { politicaCancelacion, puedeCambiarFecha, horasParaLaCita } from "../lib/politicaCancelacion";
 import { tipsDelDia } from "../lib/tips";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
@@ -386,7 +386,7 @@ async function tokenSesion() {
 }
 
 // Calcula cuánto falta (o si ya se pasó) para el próximo riego, contando
-// días de calendario en hora de CDMX desde la última foto guardada.
+// días de calendario en hora de CDMX desde el último riego (foto o "Ya la regué").
 function getWateringStatus(plant) {
   const remaining = diasParaRiego(plant?.dias_entre_riegos, plant?.history, plant?.ultimo_riego);
   if (remaining === null) return null;
@@ -399,9 +399,6 @@ function getWateringStatus(plant) {
 // Orden de prioridad para ordenar por estado de salud: lo que necesita atención primero
 const ESTADO_ORDEN = { critico: 0, regular: 1, saludable: 2 };
 
-// El precio y los horarios del mantenimiento viven en lib/servicio.js
-// (los usa también el servidor, que es quien cobra).
-
 // Fases de crecimiento que la persona puede indicar antes de escanear, para
 // darle más contexto a la IA (por ejemplo una plántula recién germinada se
 // puede confundir fácilmente con otra si no se avisa que apenas está naciendo).
@@ -411,9 +408,6 @@ const FASES_PLANTA = [
   { key: "creciendo", label: "Creciendo" },
   { key: "grande", label: "Ya grande / madura" },
 ];
-
-
-
 
 // Etapas de crecimiento de la "plantita" del buzón de tips: evoluciona según
 // qué tan sano está el jardín en general y la mejor racha de riego que tengas,
@@ -476,9 +470,9 @@ function ordenarJardin(plantas, criterio) {
 }
 
 const ESTADO_STYLES = {
-  saludable: { bg: C.pine, label: "Saludable" },
-  regular: { bg: C.amber, label: "Necesita atención" },
-  critico: { bg: C.rust, label: "En riesgo" },
+  saludable: { label: "Saludable" },
+  regular: { label: "Necesita atención" },
+  critico: { label: "En riesgo" },
 };
 
 function Tag({ children, color }) {
@@ -847,7 +841,7 @@ const Icon = {
 };
 
 // ---------- Ticket de pago: la "máquina" imprime el recibo al volver de Stripe ----------
-function TicketPago({ datos, onCerrar }) {
+function TicketPago({ datos, onCerrar, onInicio }) {
   const M = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
   const F = "'Inter', sans-serif";
   const pagado = datos.pagado;
@@ -894,7 +888,7 @@ function TicketPago({ datos, onCerrar }) {
               <img src="/stages/s2.png" alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
             </span>
             <button
-              onClick={onCerrar}
+              onClick={onInicio || onCerrar}
               style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(245,239,221,0.14)", color: C.cream, border: "1px solid rgba(245,239,221,0.18)", borderRadius: 999, padding: "9px 16px", fontFamily: F, fontWeight: 700, fontSize: 14, cursor: "pointer" }}
             >
               <Icon.Leaf style={{ width: 14, height: 14 }} /> Inicio
@@ -1174,7 +1168,7 @@ const MOTIVOS_CUENTA = {
 };
 
 function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar, onReintentar, errorInicial }) {
-  const errorEnlace = errorInicial;
+  const errorEnlace = errorInicial; // error con el que volvió de Google o de un enlace
   // Si la cuenta de Google/correo ya existía, se entra a ella en vez de vincularla.
   const entrarDirecto = errorEnlace?.tipo === "ya-existe";
   const activos = useProveedoresActivos();
@@ -1184,7 +1178,6 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
   const [tipoCodigo, setTipoCodigo] = useState("email"); // email | email_change (quien usaba la app sin cuenta guarda su jardín)
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(errorEnlace?.mensaje || null);
-  const [aviso, setAviso] = useState(null);
   const [esperaReenvio, setEsperaReenvio] = useState(0);
 
   const origen = typeof window !== "undefined" ? window.location.origin : undefined;
@@ -1209,7 +1202,6 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
   function irA(nuevoPaso) {
     setPaso(nuevoPaso);
     setError(null);
-    setAviso(null);
   }
 
   // ---------- Google / Apple / Facebook ----------
@@ -1232,7 +1224,7 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
       : await supabase.auth.signInWithOAuth({ provider: proveedor, options });
     if (error && vincular) {
       // No se pudo vincular (p. ej. "Allow manual linking" apagado en Supabase).
-      if (plantasGuardadas > 0 && !window.confirm("No pudimos pasar tus plantas a tu cuenta. ¿Entrar de todos modos? Las plantas guardadas solo en este celular no se pasarán.")) {
+      if (!window.confirm("No pudimos pasar tus plantas a tu cuenta. ¿Entrar de todos modos? Las plantas guardadas solo en este celular no se pasarán.")) {
         setEnviando(false);
         return;
       }
@@ -1250,7 +1242,6 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
   async function mandarCodigo(e) {
     e?.preventDefault();
     setError(null);
-    setAviso(null);
     const mail = correo.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setError("Revisa que el correo esté bien escrito.");
     setEnviando("correo");
@@ -1342,7 +1333,6 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
           Detalle: {errorEnlace.detalle}
         </p>
       )}
-      {aviso && <p style={{ fontFamily: F, fontSize: 14, color: C.green, margin: "14px 0 0", lineHeight: 1.4, textAlign: "center" }}>{aviso}</p>}
     </>
   );
   const encabezado = (titulo, subtitulo) => (
@@ -1478,6 +1468,68 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
           Usar sin cuenta
         </button>
       )}
+    </div>
+  );
+}
+
+// ---------- Elegir fecha y hora de una visita ----------
+const DIA_CORTO = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+function ChipsFecha({ etiqueta, fechas, llenos = [], valor, onElegir }) {
+  if (fechas.length === 0) {
+    return (
+      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: 0 }}>
+        Por ahora no hay fechas disponibles. Escríbenos por WhatsApp y te buscamos un espacio.
+      </p>
+    );
+  }
+  return (
+    <div className="brotes-chips" role="radiogroup" aria-label={etiqueta}>
+      {fechas.map((f) => {
+        const elegida = f === valor;
+        const lleno = llenos.includes(f);
+        const d = new Date(f + "T12:00:00");
+        return (
+          <button
+            key={f}
+            type="button"
+            role="radio"
+            aria-checked={elegida}
+            aria-label={`${d.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}${lleno ? ", lleno" : ""}`}
+            disabled={lleno}
+            onClick={() => onElegir(f)}
+            style={{ ...chip(elegida), minWidth: 62, flexDirection: "column", padding: "8px 10px", opacity: lleno ? 0.45 : 1, cursor: lleno ? "not-allowed" : "pointer" }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{DIA_CORTO[diaSemana(f)]}</span>
+            <span style={{ fontSize: 14, fontWeight: 800, textDecoration: lleno ? "line-through" : "none" }}>{d.getDate()}</span>
+            <span style={{ fontSize: 11, opacity: 0.8 }}>{lleno ? "Lleno" : d.toLocaleDateString("es-MX", { month: "short" }).replace(".", "")}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChipsHora({ etiqueta, horarios, ocupadas, valor, cargando, onElegir }) {
+  return (
+    <div role="radiogroup" aria-label={etiqueta} aria-busy={cargando ? "true" : "false"} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {horarios.map((h) => {
+        const ocupada = ocupadas.includes(h);
+        const elegida = h === valor && !ocupada;
+        return (
+          <button
+            key={h}
+            type="button"
+            role="radio"
+            aria-checked={elegida}
+            disabled={ocupada || cargando}
+            onClick={() => onElegir(h)}
+            style={{ ...chip(elegida), opacity: ocupada ? 0.4 : cargando ? 0.6 : 1, textDecoration: ocupada ? "line-through" : "none", cursor: ocupada ? "not-allowed" : "pointer" }}
+          >
+            {h}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1673,7 +1725,7 @@ function pendientesDeHoy(garden, reservaciones) {
   });
   const hoy = diaCDMX();
   const cita = (reservaciones || [])
-    .filter((r) => r.estado === "pagado" && r.fecha >= hoy && diasEntre(hoy, r.fecha) <= 7)
+    .filter((r) => r.estado === "pagado" && r.fecha >= hoy && diasEntre(hoy, r.fecha) <= 7 && horasParaLaCita(r) > -3)
     .sort((a, b) => (a.fecha < b.fecha ? -1 : 1))[0];
   if (cita) {
     const dias = diasEntre(hoy, cita.fecha);
@@ -1704,7 +1756,7 @@ function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onA
           <p style={{ fontFamily: F, fontSize: 13.5, color: C.ink, margin: 0, lineHeight: 1.4 }}>
             <strong>Todo al día.</strong>{" "}
             {manana.length > 0
-              ? `Mañana toca regar ${manana.slice(0, 2).map((p) => p.nombre_comun).join(" y ")}${manana.length > 2 ? ` y ${manana.length - 2} más` : ""}.`
+              ? `Mañana toca regar ${manana.slice(0, 2).map((p) => p.nombre_comun || "una planta").join(" y ")}${manana.length > 2 ? ` y ${manana.length - 2} más` : ""}.`
               : "No hay nada pendiente por ahora."}
           </p>
         </div>
@@ -1751,12 +1803,13 @@ function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onA
 }
 
 // ---------- Detalle de una reservación: ver, cambiar fecha o cancelar ----------
-function DetalleReservacion({ r, fechasReservables, onCerrar, onActualizada }) {
+function DetalleReservacion({ r, fechasReservables, diasLlenos, horariosActivos, onCerrar, onActualizada }) {
   const F = "'Inter', sans-serif";
   const [modo, setModo] = useState("ver"); // ver | cambiar | cancelar
   const [nuevaFecha, setNuevaFecha] = useState(null);
   const [nuevaHora, setNuevaHora] = useState(null);
   const [ocupadas, setOcupadas] = useState([]);
+  const [horariosDia, setHorariosDia] = useState(null);
   const [cargandoHoras, setCargandoHoras] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState(null);
@@ -1766,9 +1819,19 @@ function DetalleReservacion({ r, fechasReservables, onCerrar, onActualizada }) {
     let vigente = true;
     setCargandoHoras(true);
     setOcupadas([]);
-    fetch(`/api/horarios-ocupados?fecha=${nuevaFecha}`)
+    // "excluir": el servidor no cuenta esta misma cita como ocupada.
+    tokenSesion()
+      .then((token) =>
+        fetch(`/api/horarios-ocupados?fecha=${nuevaFecha}&excluir=${encodeURIComponent(r.id)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+      )
       .then((x) => (x.ok ? x.json() : { ocupadas: [] }))
-      .then((d) => vigente && setOcupadas(d.ocupadas || []))
+      .then((d) => {
+        if (!vigente) return;
+        setOcupadas(d.ocupadas || []);
+        if (d.horarios) setHorariosDia(d.horarios);
+      })
       .catch(() => {})
       .finally(() => vigente && setCargandoHoras(false));
     return () => {
@@ -1899,7 +1962,16 @@ function DetalleReservacion({ r, fechasReservables, onCerrar, onActualizada }) {
             {(sePuedeCambiar || politica.puede) && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 22 }}>
                 {sePuedeCambiar && (
-                  <button onClick={() => setModo("cambiar")} style={botonGrande(C.green, "#fff")}>
+                  <button
+                    onClick={() => {
+                      setNuevaFecha(null);
+                      setNuevaHora(null);
+                      setOcupadas([]);
+                      setError(null);
+                      setModo("cambiar");
+                    }}
+                    style={botonGrande(C.green, "#fff")}
+                  >
                     Cambiar fecha u hora
                   </button>
                 )}
@@ -1910,7 +1982,7 @@ function DetalleReservacion({ r, fechasReservables, onCerrar, onActualizada }) {
                 )}
               </div>
             )}
-            {r.estado === "pagado" && !sePuedeCambiar && (
+            {r.estado === "pagado" && !sePuedeCambiar && horasParaLaCita(r) > 0 && (
               <p style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, margin: "14px 0 0", lineHeight: 1.45 }}>
                 Faltan menos de 24 horas para tu cita. Para cambiarla, escríbenos por WhatsApp.
               </p>
@@ -1924,34 +1996,27 @@ function DetalleReservacion({ r, fechasReservables, onCerrar, onActualizada }) {
               Sin costo. Tu cita actual: {new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" })} · {r.hora}
             </p>
             <p style={etiquetaCampo}>Nueva fecha</p>
-            <div className="brotes-chips" role="radiogroup" aria-label="Nueva fecha">
-              {fechasReservables.map((f) => {
-                const elegida = f === nuevaFecha;
-                const d = new Date(f + "T12:00:00");
-                return (
-                  <button key={f} type="button" role="radio" aria-checked={elegida} onClick={() => { setNuevaFecha(f); setNuevaHora(null); }} style={{ ...chip(elegida), minWidth: 62, flexDirection: "column", padding: "8px 10px" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{diaSemana(f) === 6 ? "Sáb" : "Dom"}</span>
-                    <span style={{ fontSize: 14, fontWeight: 800 }}>{d.getDate()}</span>
-                    <span style={{ fontSize: 11, opacity: 0.8 }}>{d.toLocaleDateString("es-MX", { month: "short" }).replace(".", "")}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <ChipsFecha
+              etiqueta="Nueva fecha"
+              fechas={fechasReservables}
+              llenos={(diasLlenos || []).filter((f) => f !== r.fecha)}
+              valor={nuevaFecha}
+              onElegir={(f) => {
+                setNuevaFecha(f);
+                setNuevaHora(null);
+              }}
+            />
             {nuevaFecha && (
               <>
                 <p style={etiquetaCampo}>Nueva hora</p>
-                <div role="radiogroup" aria-label="Nueva hora" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {HORARIOS_DISPONIBLES.map((h) => {
-                    const actual = nuevaFecha === r.fecha && h === r.hora;
-                    const ocupada = !actual && ocupadas.includes(h);
-                    const elegida = h === nuevaHora;
-                    return (
-                      <button key={h} type="button" role="radio" aria-checked={elegida} disabled={ocupada || actual || cargandoHoras} onClick={() => setNuevaHora(h)} style={{ ...chip(elegida), opacity: ocupada || actual ? 0.4 : 1, textDecoration: ocupada ? "line-through" : "none" }}>
-                        {h}
-                      </button>
-                    );
-                  })}
-                </div>
+                <ChipsHora
+                  etiqueta="Nueva hora"
+                  horarios={horariosDia || horariosActivos}
+                  ocupadas={nuevaFecha === r.fecha ? [...ocupadas.filter((h) => h !== r.hora), r.hora] : ocupadas}
+                  valor={nuevaHora}
+                  cargando={cargandoHoras}
+                  onElegir={setNuevaHora}
+                />
               </>
             )}
             {error && <p role="alert" style={{ fontFamily: F, fontSize: 13, color: C.red, margin: 0 }}>{error}</p>}
@@ -2055,6 +2120,7 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         borderTop: "1px solid " + C.cardLine,
         boxShadow: "0 -1px 0 rgba(0,0,0,0.02), 0 12px 30px -10px rgba(40,64,42,0.18)",
         backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
       }}
     >
       {items.map((item) => (
@@ -2151,7 +2217,7 @@ export default function BrotesApp() {
   const [compareIndices, setCompareIndices] = useState([]);
 
   async function saveNameEdit(plantId) {
-    const nuevoNombre = nameDraft.trim();
+    const nuevoNombre = (nameDraft || "").trim();
     if (!nuevoNombre) {
       setEditingName(false);
       return;
@@ -2163,10 +2229,14 @@ export default function BrotesApp() {
     }
     if (guardandoNombreRef.current) return; // evita doble toque
     guardandoNombreRef.current = true;
-    const { error } = await supabase.from("plantas").update({ nombre_comun: nuevoNombre }).eq("id", plantId);
+    // Con otro nombre, la ficha de cuidado se vuelve a preparar para la planta correcta.
+    let { error } = await supabase.from("plantas").update({ nombre_comun: nuevoNombre, ficha: null }).eq("id", plantId);
+    if (error && (error.code === "PGRST204" || error.code === "42703")) {
+      ({ error } = await supabase.from("plantas").update({ nombre_comun: nuevoNombre }).eq("id", plantId));
+    }
     guardandoNombreRef.current = false;
     if (!error) {
-      setGarden((prev) => prev.map((p) => (p.id === plantId ? { ...p, nombre_comun: nuevoNombre } : p)));
+      setGarden((prev) => prev.map((p) => (p.id === plantId ? { ...p, nombre_comun: nuevoNombre, ficha: null } : p)));
       setEditingName(false);
       // Registro aparte de la corrección — para que más adelante se pueda ver
       // qué nombres suele fallar la IA y mejorar el prompt con esos casos reales.
@@ -2196,7 +2266,8 @@ export default function BrotesApp() {
     if (!plant || regando || regadaHoy(plant)) return;
     const estado = getWateringStatus(plant);
     const rachaActual = plant.racha_riego || 0;
-    const nuevaRacha = estado?.late ? 0 : rachaActual + 1;
+    // Solo cuenta como "a tiempo" si ya tocaba (hoy o mañana); regar antes no suma racha.
+    const nuevaRacha = estado?.late ? 0 : estado && estado.remaining <= 1 ? rachaActual + 1 : rachaActual;
     const ahora = new Date().toISOString();
     setRegando(plant.id);
     const { error } = await supabase.from("plantas").update({ ultimo_riego: ahora, racha_riego: nuevaRacha }).eq("id", plant.id);
@@ -2208,14 +2279,20 @@ export default function BrotesApp() {
     }
     setGarden((prev) => prev.map((p) => (p.id === plant.id ? { ...p, ultimo_riego: ahora, racha_riego: nuevaRacha } : p)));
     const dias = plant.dias_entre_riegos;
-    setAviso(`💧 Listo, regaste ${plant.nombre_comun || "tu planta"}.${dias ? ` Te avisamos en ${dias === 1 ? "1 día" : `${dias} días`}.` : ""}`);
+    const cuando = dias ? (dias === 1 ? "mañana" : `en ${dias} días`) : null;
+    setAviso(
+      `💧 Listo, regaste ${plant.nombre_comun || "tu planta"}.` +
+        (cuando ? (notifStatus === "subscribed" ? ` Te avisamos ${cuando}.` : ` Le vuelve a tocar ${cuando}.`) : "")
+    );
   }
 
   // Ficha de cuidado: se pide la primera vez que se abre una planta.
   const [fichaCargando, setFichaCargando] = useState(null);
   const [fichaError, setFichaError] = useState(null);
+  const fichasPedidas = useRef(new Set()); // evita pedir dos veces la misma ficha
   async function cargarFicha(plant) {
-    if (!plant || plant.ficha || fichaCargando === plant.id) return;
+    if (!plant || plant.ficha || fichasPedidas.current.has(plant.id)) return;
+    fichasPedidas.current.add(plant.id);
     setFichaCargando(plant.id);
     setFichaError(null);
     try {
@@ -2231,7 +2308,8 @@ export default function BrotesApp() {
     } catch (err) {
       setFichaError({ id: plant.id, mensaje: err.message });
     } finally {
-      setFichaCargando(null);
+      fichasPedidas.current.delete(plant.id);
+      setFichaCargando((x) => (x === plant.id ? null : x));
     }
   }
 
@@ -2344,10 +2422,12 @@ export default function BrotesApp() {
       .then((data) => {
         if (cancelado) return;
         const ocupadas = data.ocupadas || [];
+        const horarios = data.horarios || HORARIOS_DISPONIBLES;
         setHorasOcupadas(ocupadas);
+        if (data.fechas) setDisponibilidad({ fechas: data.fechas, diasLlenos: data.diasLlenos || [], horarios });
         setReservaHora((actual) => {
-          if (!ocupadas.includes(actual)) return actual;
-          return HORARIOS_DISPONIBLES.find((h) => !ocupadas.includes(h)) || actual;
+          if (horarios.includes(actual) && !ocupadas.includes(actual)) return actual;
+          return horarios.find((h) => !ocupadas.includes(h)) || actual;
         });
       })
       .catch(() => {
@@ -2361,18 +2441,38 @@ export default function BrotesApp() {
     };
   }, [reservaFecha]);
 
-  const diaLleno = !!reservaFecha && HORARIOS_DISPONIBLES.every((h) => horasOcupadas.includes(h));
-
-  // Sábados y domingos desde mañana hasta 90 días: solo se ofrecen fechas válidas.
-  const fechasReservables = (() => {
-    const hoy = diaCDMX();
-    const lista = [];
-    for (let i = 1; i <= DIAS_MAXIMOS_ANTICIPACION; i++) {
-      const d = sumarDias(hoy, i);
-      if (esFinDeSemana(d)) lista.push(d);
-    }
-    return lista;
-  })();
+  // Qué fechas y horas se pueden reservar: lo decide tu agenda (/admin → Agenda).
+  // Mientras carga se muestran los fines de semana, como antes.
+  const [disponibilidad, setDisponibilidad] = useState(null); // { fechas, diasLlenos, horarios }
+  async function cargarDisponibilidad() {
+    try {
+      const r = await fetch("/api/horarios-ocupados");
+      if (!r.ok) return;
+      const d = await r.json();
+      if (Array.isArray(d.fechas)) setDisponibilidad({ fechas: d.fechas, diasLlenos: d.diasLlenos || [], horarios: d.horarios || HORARIOS_DISPONIBLES });
+    } catch {}
+  }
+  useEffect(() => {
+    if (screen === "tienda") cargarDisponibilidad();
+  }, [screen]);
+  const horariosActivos = disponibilidad?.horarios || HORARIOS_DISPONIBLES;
+  const diasLlenos = disponibilidad?.diasLlenos || [];
+  const fechasReservables =
+    disponibilidad?.fechas ||
+    (() => {
+      const hoy = diaCDMX();
+      const lista = [];
+      for (let i = 1; i <= DIAS_MAXIMOS_ANTICIPACION; i++) {
+        const d = sumarDias(hoy, i);
+        if (esFinDeSemana(d)) lista.push(d);
+      }
+      return lista;
+    })();
+  // Si la fecha elegida dejó de estar disponible, se quita.
+  useEffect(() => {
+    if (reservaFecha && disponibilidad && (!disponibilidad.fechas.includes(reservaFecha) || disponibilidad.diasLlenos.includes(reservaFecha))) setReservaFecha("");
+  }, [disponibilidad, reservaFecha]);
+  const diaLleno = !!reservaFecha && horariosActivos.every((h) => horasOcupadas.includes(h));
 
   const [reservando, setReservando] = useState(false);
   const [reservaError, setReservaError] = useState(null);
@@ -2408,10 +2508,6 @@ export default function BrotesApp() {
     }
     if (!reservaNombre.trim() || !reservaTelefono.trim() || !reservaCorreo.trim() || !reservaFecha || !reservaDireccion.trim()) {
       setReservaError("Completa tu nombre, teléfono, correo, la dirección y la fecha para continuar.");
-      return;
-    }
-    if (!esFinDeSemana(reservaFecha)) {
-      setReservaError("La fecha debe ser sábado o domingo.");
       return;
     }
     if (horasOcupadas.includes(reservaHora)) {
@@ -2539,9 +2635,14 @@ export default function BrotesApp() {
     setSugerenciaEnviada(false);
     setSugerenciaError(null);
     setNotifError(null);
-    photoUrls.forEach((u) => URL.revokeObjectURL(u));
+    setAviso(null);
+    setFichaError(null);
+    setNameDraft("");
+    setPhotoUrls((prev) => {
+      prev.forEach((u) => URL.revokeObjectURL(u)); // libera las vistas previas
+      return [];
+    });
     setPhotoFiles([]);
-    setPhotoUrls([]);
     setScreen("jardin");
   }
 
@@ -2574,7 +2675,12 @@ export default function BrotesApp() {
     }
     const u = session.user;
     const mismoUsuario = u.id === userIdRef.current;
-    if (!mismoUsuario && userIdRef.current) resetEstadoUsuario();
+    if (!mismoUsuario && userIdRef.current) {
+      resetEstadoUsuario();
+      setLoadingGarden(true);
+    }
+    // Ya se pudo abrir la app: el aviso de "no se pudo abrir sin cuenta" sobra.
+    setErrorCuenta((e) => (e?.tipo === "anonimo" ? null : e));
     userIdRef.current = u.id;
     setUserId(u.id);
     setUsuarioCorreo(u.email || "");
@@ -2872,7 +2978,8 @@ export default function BrotesApp() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           images,
-          nombreSugerido: plantHint,
+          // En un seguimiento, la IA ya sabe qué planta es.
+          nombreSugerido: destino.modo === "followup" ? garden.find((p) => p.id === destino.plantaId)?.nombre_comun || "" : plantHint,
           faseSugerida: plantFase,
           seguimientoDe: destino.modo === "followup" ? destino.plantaId : null,
         }),
@@ -2964,12 +3071,12 @@ export default function BrotesApp() {
       const mismoDia = diasDesdeRiego(plant?.history, plant?.ultimo_riego) === 0;
       const rachaActual = plant?.racha_riego || 0;
       const nuevaRacha = estado?.late ? 0 : mismoDia ? rachaActual : rachaActual + 1;
+      // En el seguimiento se conserva el nombre de la planta (pudo haberlo
+      // corregido la persona); solo se actualiza cómo está.
+      const { nombre_comun: _n, nombre_cientifico: _c, confianza: _f, ...salud } = resultData;
       const { error } = await supabase
         .from("plantas")
         .update({
-          nombre_comun: resultData.nombre_comun,
-          nombre_cientifico: resultData.nombre_cientifico,
-          confianza: resultData.confianza,
           estado_general: resultData.estado_general,
           riego: resultData.riego,
           dias_entre_riegos: resultData.dias_entre_riegos,
@@ -2983,7 +3090,7 @@ export default function BrotesApp() {
         })
         .eq("id", followupPlantId);
       if (!error) {
-        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...resultData, racha_riego: nuevaRacha, imageUrl: publicUrl, history: newHistory } : p)));
+        setGarden((prev) => prev.map((p) => (p.id === followupPlantId ? { ...p, ...salud, racha_riego: nuevaRacha, imageUrl: publicUrl, history: newHistory } : p)));
       } else {
         console.error("Error actualizando planta:", error);
         if (!sigueVigente()) return setAviso("No se pudo guardar la foto de seguimiento. Inténtalo de nuevo.");
@@ -3037,6 +3144,16 @@ export default function BrotesApp() {
   const nivelAbierto = authEstado !== "lista" ? null :
     cuentaMotivo ? "cuenta" : ticket ? "ticket" : activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
   const historialRef = useRef({ agregado: false, ignorarSiguiente: false });
+  // La tecla Esc cierra lo que esté abierto (igual que "Atrás").
+  const nivelRef = useRef(null);
+  nivelRef.current = nivelAbierto;
+  useEffect(() => {
+    function alTeclear(e) {
+      if (e.key === "Escape" && nivelRef.current && historialRef.current.agregado) window.history.back();
+    }
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, []);
   const cerrarRef = useRef(() => {});
   cerrarRef.current = () => {
     if (cuentaMotivo) cerrarCuenta();
@@ -3086,7 +3203,7 @@ export default function BrotesApp() {
   useEffect(() => {
     if (activePlant && !activePlant.ficha) cargarFicha(activePlant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePlant?.id]);
+  }, [activePlant?.id, !!activePlant?.ficha]);
 
   return (
     <div className="brotes-root" lang="es" style={{ display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
@@ -3812,7 +3929,7 @@ export default function BrotesApp() {
                 draft: nameDraft,
                 onDraftChange: setNameDraft,
                 onStart: () => {
-                  setNameDraft(activePlant.nombre_comun);
+                  setNameDraft(activePlant.nombre_comun || "");
                   setEditingName(true);
                 },
                 onSave: () => saveNameEdit(activePlant.id),
@@ -4185,7 +4302,7 @@ export default function BrotesApp() {
               <div style={{ background: "rgba(156,59,46,0.1)", borderRadius: 14, padding: "12px 14px", marginBottom: 16, display: "flex", gap: 10, alignItems: "flex-start" }}>
                 <Icon.Warning style={{ color: C.red, flexShrink: 0, marginTop: 2 }} />
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.red, margin: 0, lineHeight: 1.4 }}>
-                  Se canceló el pago. Tu reservación quedó guardada — puedes intentar pagar de nuevo cuando quieras.
+                  No se completó el pago y no se te cobró nada. El horario queda apartado unos minutos: puedes reservar de nuevo o cancelar la reservación pendiente desde Tus reservaciones.
                 </p>
               </div>
             )}
@@ -4253,7 +4370,7 @@ export default function BrotesApp() {
                     <>
                       {botonPrincipal("Reservar", () => (esAnonimo ? pedirCuenta("reservar") : setTiendaPaso("tamano")), false)}
                       <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
-                        Puedes pagar con tarjeta o en efectivo en OXXO.
+                        Puedes pagar con tarjeta, o en efectivo en OXXO si tu visita es en 3 días o más.
                       </p>
                     </>
                   )}
@@ -4361,49 +4478,19 @@ export default function BrotesApp() {
                           autoComplete="street-address"
                           style={estiloCampo}
                         />
-                        <p style={etiquetaCampo}>Fecha (sábado o domingo)</p>
-                        <div className="brotes-chips" role="radiogroup" aria-label="Fecha de la visita">
-                          {fechasReservables.map((f) => {
-                            const elegida = f === reservaFecha;
-                            const fecha = new Date(f + "T12:00:00");
-                            return (
-                              <button
-                                key={f}
-                                type="button"
-                                role="radio"
-                                aria-checked={elegida}
-                                onClick={() => setReservaFecha(f)}
-                                style={{ ...chip(elegida), minWidth: 62, flexDirection: "column", padding: "8px 10px" }}
-                              >
-                                <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{diaSemana(f) === 6 ? "Sáb" : "Dom"}</span>
-                                <span style={{ fontSize: 14, fontWeight: 800 }}>{fecha.getDate()}</span>
-                                <span style={{ fontSize: 11, opacity: 0.8 }}>{fecha.toLocaleDateString("es-MX", { month: "short" }).replace(".", "")}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
+                        <p style={etiquetaCampo}>Fecha</p>
+                        <ChipsFecha etiqueta="Fecha de la visita" fechas={fechasReservables} llenos={diasLlenos} valor={reservaFecha} onElegir={setReservaFecha} />
                         {reservaFecha && (
                           <>
                             <p style={etiquetaCampo}>Hora</p>
-                            <div role="radiogroup" aria-label="Hora de la visita" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                              {HORARIOS_DISPONIBLES.map((h) => {
-                                const ocupada = horasOcupadas.includes(h);
-                                const elegida = h === reservaHora && !ocupada;
-                                return (
-                                  <button
-                                    key={h}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={elegida}
-                                    disabled={ocupada || cargandoHoras}
-                                    onClick={() => setReservaHora(h)}
-                                    style={{ ...chip(elegida), opacity: ocupada ? 0.4 : 1, textDecoration: ocupada ? "line-through" : "none", cursor: ocupada ? "not-allowed" : "pointer" }}
-                                  >
-                                    {h}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            <ChipsHora
+                              etiqueta="Hora de la visita"
+                              horarios={horariosActivos}
+                              ocupadas={horasOcupadas}
+                              valor={horasOcupadas.includes(reservaHora) ? null : reservaHora}
+                              cargando={cargandoHoras}
+                              onElegir={setReservaHora}
+                            />
                             {diaLleno && (
                               <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.red, margin: 0 }}>
                                 Ese día ya está lleno. Elige otra fecha.
@@ -4428,10 +4515,10 @@ export default function BrotesApp() {
                       {botonPrincipal(
                         reservando ? "Preparando pago..." : `Reservar y pagar ${tamanoElegido ? formatoPrecio(tamanoElegido.precio) : ""}`,
                         reservarYPagar,
-                        reservando
+                        reservando || cargandoHoras || (reservaFecha && !horariosActivos.includes(reservaHora)) || horasOcupadas.includes(reservaHora)
                       )}
                       <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>
-                        Puedes pagar con tarjeta o en efectivo en OXXO. Al pagar aceptas los{" "}
+                        Puedes pagar con tarjeta, o en efectivo en OXXO si tu visita es en 3 días o más. Al pagar aceptas los{" "}
                         <a href="/terminos#s8" target="_blank" rel="noopener" style={{ color: C.green, fontWeight: 700 }}>
                           términos del servicio
                         </a>{" "}
@@ -4467,6 +4554,7 @@ export default function BrotesApp() {
                       key={r.id}
                       className="brotes-reveal"
                       onClick={() => setReservaDetalle(r)}
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setReservaDetalle(r)}
                       role="button"
                       tabIndex={0}
                       style={{ background: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, cursor: "pointer" }}
@@ -4510,18 +4598,28 @@ export default function BrotesApp() {
 
         </div>
 
-        {ticket && authEstado === "lista" && <TicketPago datos={ticket} onCerrar={() => setTicket(null)} />}
+        {ticket && authEstado === "lista" && <TicketPago
+            datos={ticket}
+            onCerrar={() => setTicket(null)}
+            onInicio={() => {
+              setTicket(null);
+              setScreen("jardin");
+            }}
+          />}
 
         {reservaDetalle && (
           <DetalleReservacion
             key={reservaDetalle.id}
             r={reservaDetalle}
             fechasReservables={fechasReservables}
+            diasLlenos={diasLlenos}
+            horariosActivos={horariosActivos}
             onCerrar={() => setReservaDetalle(null)}
             onActualizada={(nueva, mensaje) => {
               if (nueva) {
                 setMisReservaciones((prev) => prev.map((x) => (x.id === nueva.id ? nueva : x)));
                 setReservaDetalle(nueva);
+                cargarDisponibilidad();
               }
               if (mensaje) setAviso(mensaje);
             }}

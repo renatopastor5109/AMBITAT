@@ -14,6 +14,7 @@ const VARIABLES = [
   ["VAPID_PRIVATE_KEY", "Notificaciones"],
   ["CRON_SECRET", "Recordatorios diarios"],
   ["GOOGLE_MAPS_API_KEY", "Fotos de viveros (opcional)"],
+  ["NEXT_PUBLIC_SITE_URL", "Dirección de la app (opcional)"],
 ];
 
 export default async function handler(req, res) {

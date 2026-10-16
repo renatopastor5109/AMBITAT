@@ -1,9 +1,15 @@
 // Panel de administrador: marca una cita como "completado" (ya se hizo la
-// visita) o la regresa a "pagado" si te equivocaste.
+// visita), la regresa a "pagado", o resuelve una cita "por resolver".
 import { clienteAdmin } from "../../../lib/usuarioServidor";
 import { esAdmin } from "../../../lib/adminAuth";
 
-const ESTADOS_PERMITIDOS = ["completado", "pagado"];
+const ESTADOS_PERMITIDOS = ["completado", "pagado", "cancelado"];
+// De qué estado a qué estado se puede pasar desde el panel.
+const ORIGENES = {
+  completado: ["pagado"],
+  pagado: ["completado", "conflicto"], // regresar una completada, o mantener una "por resolver"
+  cancelado: ["conflicto"], // ya le reembolsaste a una "por resolver"
+};
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -15,13 +21,13 @@ export default async function handler(req, res) {
 
   const { id, estado } = req.body || {};
 
-  // Ya le depositaste a mano a alguien que canceló y había pagado en OXXO.
+  // Ya le regresaste su dinero a mano (OXXO) o confirmaste en Stripe un reembolso dudoso.
   if (id && estado === "reembolso_depositado") {
     const { data, error } = await clienteAdmin()
       .from("reservaciones")
       .update({ reembolso_estado: "depositado" })
       .eq("id", id)
-      .eq("reembolso_estado", "pendiente_manual")
+      .in("reembolso_estado", ["pendiente_manual", "revisar"])
       .select("id");
     if (error) {
       console.error("Error marcando depósito:", error);
@@ -36,14 +42,13 @@ export default async function handler(req, res) {
   }
 
   const admin = clienteAdmin();
-  // Solo se puede cambiar entre pagado <-> completado; nunca marcar como
-  // pagada una cita que no se ha pagado.
-  const origen = estado === "completado" ? "pagado" : "completado";
+  // Nunca se marca como pagada una cita que no se ha pagado: solo se permiten
+  // los cambios de ORIGENES.
   const { data, error } = await admin
     .from("reservaciones")
     .update({ estado })
     .eq("id", id)
-    .eq("estado", origen)
+    .in("estado", ORIGENES[estado])
     .select("id, estado");
 
   if (error) {
@@ -51,7 +56,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "No se pudo actualizar. Intenta de nuevo." });
   }
   if (!data || data.length === 0) {
-    return res.status(409).json({ error: "Solo puedes completar citas que ya están pagadas" });
+    return res.status(409).json({ error: "Esa cita cambió de estado. Toca Actualizar e intenta de nuevo." });
   }
   return res.status(200).json({ ok: true, estado });
 }

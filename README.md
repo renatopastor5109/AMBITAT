@@ -23,7 +23,7 @@ Para dejarlo configurado, sigue `GUIA-CUENTAS.md` y revisa `/admin → Ajustes`.
   - `foto-vivero.js` — fotos de los viveros desde Google Maps.
   - `admin/` — datos del panel de citas (con contraseña).
 - `lib/` — piezas compartidas: precios (`servicio.js`), tu agenda de visitas
-  (`agenda.js`, se edita en `/admin → Agenda`), disponibilidad
+  (`agenda.js`, se edita en `/admin → Servicio`), disponibilidad
   (`horariosOcupados.js`), reglas de cancelación (`politicaCancelacion.js`),
   fechas en hora de CDMX (`fechas.js`) y viveros (`viveros.js`).
 
@@ -47,8 +47,20 @@ Después de agregar o cambiar una variable hay que hacer **Redeploy**.
 
 Los archivos `supabase-*.sql` crean las tablas y las reglas de seguridad.
 Todos se pueden volver a correr sin problema. El más reciente es
-`supabase-revision-3.sql` (tu agenda configurable desde `/admin → Agenda` y
-datos para cancelaciones justas). Antes de ese, corre `supabase-revision-2.sql`.
+`supabase-revision-4.sql` (viveros aliados con QR, "Invita a un amigo" y
+créditos). Antes de ese, en orden: `supabase-revision-2.sql` y
+`supabase-revision-3.sql` (agenda configurable y cancelaciones justas).
+
+## Crecimiento
+
+- Página de presentación pública: `/conoce` (precios y zonas salen de /admin → Servicio).
+  Es la que va en Google Maps; ver `GUIA-GOOGLE-BUSINESS.md`. También hay `/sitemap.xml` y `/robots.txt`.
+
+- `/admin → Crecer`: da de alta viveros, imprime su QR (`/v/<vivero>`) y mira
+  cuánta gente llega de cada uno.
+- Enlace de invitación de cada persona: `/r/<CÓDIGO>` (Mi cuenta → Invita a un amigo).
+- Avisos del clima: `/api/clima` (Open-Meteo, sin llave) y el recordatorio
+  diario `/api/enviar-recordatorios`, que los lunes manda un consejo de temporada.
 
 ## Desarrollo local (opcional)
 

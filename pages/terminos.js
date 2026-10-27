@@ -3,9 +3,24 @@
 // solos de lib/servicio.js, así que siempre coinciden con la Tienda.
 import PaginaLegal, { Dato, Seccion, Tabla, Resumen } from "../components/PaginaLegal";
 import { RESPONSABLE as R } from "../lib/legal";
-import { TAMANOS, DIAS_MAXIMOS_ANTICIPACION, formatoPrecio } from "../lib/servicio";
+import { DIAS_MAXIMOS_ANTICIPACION, formatoPrecio, tamanosConPrecios } from "../lib/servicio";
+import { clienteAdmin } from "../lib/usuarioServidor";
+import { obtenerPrecios } from "../lib/agendaServidor";
 
-export default function Terminos() {
+// Los precios se leen al abrir la página, así siempre coinciden con los que
+// pusiste en /admin → Servicio.
+export async function getServerSideProps({ res }) {
+  let precios = null;
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) precios = await obtenerPrecios(clienteAdmin());
+  } catch (err) {
+    console.error("No se pudieron leer los precios:", err.message);
+  }
+  res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+  return { props: { tamanos: tamanosConPrecios(precios) } };
+}
+
+export default function Terminos({ tamanos = tamanosConPrecios(null) }) {
   return (
     <PaginaLegal
       titulo="Términos y condiciones"
@@ -116,7 +131,7 @@ export default function Terminos() {
         </p>
         <Tabla
           cols={["Tamaño", "Precio", "Incluye"]}
-          filas={TAMANOS.map((t) => [t.nombre, `${formatoPrecio(t.precio)} MXN`, t.incluye.join(" · ")])}
+          filas={tamanos.map((t) => [t.nombre, `${formatoPrecio(t.precio)} MXN`, t.incluye.join(" · ")])}
         />
         <p>
           Plantas nuevas, macetas, sustrato adicional o cualquier material extra se cotizan aparte y{" "}
@@ -179,7 +194,29 @@ export default function Terminos() {
         </ul>
       </Seccion>
 
-      <Seccion n={9} titulo="Disponibilidad y cambios en la app">
+      <Seccion n={9} titulo="Invita a un amigo">
+        <ul>
+          <li>Desde Mi cuenta puedes compartir tu enlace de invitación.</li>
+          <li>
+            La persona que llegue con tu enlace y cree su cuenta recibe <strong>$100 de descuento en su primer mantenimiento</strong>.
+          </li>
+          <li>
+            Cuando esa persona pague su primer mantenimiento, tú recibes <strong>$100 de crédito</strong> para tu próximo
+            mantenimiento. No hay límite de amigos.
+          </li>
+          <li>
+            Descuentos y créditos solo se usan dentro de Ámbitat para mantenimientos; no se cambian por dinero ni se transfieren.
+            Siempre se cobra un mínimo de $100 por servicio.
+          </li>
+          <li>
+            Si cancelas un mantenimiento en el que usaste crédito, el crédito regresa a tu cuenta. Si tu amigo cancela y se le
+            reembolsa, el crédito que ganaste por él puede retirarse si aún no lo usaste.
+          </li>
+          <li>No se vale invitarte a ti mismo con otra cuenta ni hacer cuentas falsas; si detectamos abuso, podemos quitar los créditos.</li>
+        </ul>
+      </Seccion>
+
+      <Seccion n={10} titulo="Disponibilidad y cambios en la app">
         <p>
           Hacemos lo posible para que Ámbitat funcione siempre, pero puede haber fallas, mantenimientos o cambios. Podemos
           agregar, cambiar o quitar funciones de la app gratuita. Si un cambio afecta un servicio que ya pagaste, te avisaremos y
@@ -187,7 +224,7 @@ export default function Terminos() {
         </p>
       </Seccion>
 
-      <Seccion n={10} titulo="Responsabilidad">
+      <Seccion n={11} titulo="Responsabilidad">
         <p>
           En la medida que lo permita la ley, Ámbitat no es responsable por daños que resulten de seguir los consejos automáticos
           de la app, de recordatorios que no lleguen o de información de terceros, como la del directorio de viveros. Cuando se
@@ -197,14 +234,14 @@ export default function Terminos() {
         <p>Nada de lo dicho en estos términos limita los derechos que te da la Ley Federal de Protección al Consumidor.</p>
       </Seccion>
 
-      <Seccion n={11} titulo="Propiedad intelectual">
+      <Seccion n={12} titulo="Propiedad intelectual">
         <p>
           La marca Ámbitat, su logotipo, diseño, ilustraciones, textos y código son propiedad de Ámbitat o se usan con permiso.
           No puedes copiarlos ni usarlos sin nuestra autorización por escrito.
         </p>
       </Seccion>
 
-      <Seccion n={12} titulo="Cierre de cuenta">
+      <Seccion n={13} titulo="Cierre de cuenta">
         <p>
           Puedes pedir que borremos tu cuenta en cualquier momento escribiendo a <Dato v={R.correo} />. Nosotros podemos
           suspender o cerrar cuentas que no cumplan estos términos. Si eso pasa y tienes un servicio pagado pendiente, te
@@ -212,14 +249,14 @@ export default function Terminos() {
         </p>
       </Seccion>
 
-      <Seccion n={13} titulo="Cambios a estos términos">
+      <Seccion n={14} titulo="Cambios a estos términos">
         <p>
           Si cambiamos estos términos publicaremos la nueva versión aquí con su fecha y, si el cambio es importante, te avisaremos
           en la app o por correo. Cada reservación pagada se rige por los términos que estaban vigentes cuando la pagaste.
         </p>
       </Seccion>
 
-      <Seccion n={14} titulo="Ley aplicable, quejas y contacto">
+      <Seccion n={15} titulo="Ley aplicable, quejas y contacto">
         <p>
           Estos términos se rigen por las leyes de los Estados Unidos Mexicanos. Si tienes una queja, primero escríbenos para
           resolverla. También puedes acudir a la Procuraduría Federal del Consumidor (PROFECO). Para cualquier controversia

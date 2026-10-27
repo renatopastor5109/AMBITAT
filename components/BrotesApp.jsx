@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { VIVEROS, mapsUrl } from "../lib/viveros";
-import { TAMANOS, tamanoPorClave, PRECIO_DESDE_CENTAVOS, formatoPrecio, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../lib/servicio";
+import { TAMANOS, tamanoPorClave, formatoPrecio, HORARIOS_DISPONIBLES, DIAS_MAXIMOS_ANTICIPACION } from "../lib/servicio";
 import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto, diasDesdeRiego, sumarDias, diaSemana } from "../lib/fechas";
 import { politicaCancelacion, puedeCambiarFecha, horasParaLaCita } from "../lib/politicaCancelacion";
 import { tipsDelDia } from "../lib/tips";
+import { consejoDeTemporada } from "../lib/temporadas";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
@@ -94,6 +95,32 @@ html, body {
   position: relative;
   overflow: hidden;
 }
+/* Bienvenida de 3 pantallas (primera vez) */
+.brotes-primera {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: #EAC468;
+  display: flex;
+  justify-content: center;
+  animation: brotesAparece 0.35s ease both;
+}
+.brotes-primera-caja {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  padding: max(18px, env(safe-area-inset-top)) 22px max(22px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.brotes-primera-slide { animation: brotesSlide 0.35s ease both; }
+@keyframes brotesAparece { from { opacity: 0; } to { opacity: 1; } }
+@keyframes brotesSlide { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes brotesFlota { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes brotesNotif { 0% { opacity: 0; transform: translateY(-14px) scale(0.96); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .brotes-primera, .brotes-primera-slide, .brotes-primera * { animation: none !important; }
+}
 /* Siluetas grises mientras algo carga */
 .brotes-esqueleto {
   background: linear-gradient(90deg, #EFE6CC 25%, #f7f1e1 50%, #EFE6CC 75%);
@@ -102,17 +129,6 @@ html, body {
 }
 @keyframes brotesEsqueleto { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .brotes-esqueleto { animation: none; } }
-/* Fila de fechas que se desliza de lado */
-.brotes-chips {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 2px 2px 6px;
-  margin: 0 -2px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.brotes-chips::-webkit-scrollbar { display: none; }
 /* Solo esta zona se desplaza; la barra de pestañas se queda fija abajo */
 .brotes-scroll {
   flex: 1;
@@ -1286,9 +1302,7 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
 
   if (estado === "cargando") {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <p style={{ fontFamily: F, fontSize: 14, color: C.inkSoft }}>Cargando...</p>
-      </div>
+      <EsqueletoApp />
     );
   }
 
@@ -1472,44 +1486,528 @@ function PantallaCuenta({ estado, esAnonimo, motivo, plantasGuardadas, onCerrar,
   );
 }
 
-// ---------- Elegir fecha y hora de una visita ----------
-const DIA_CORTO = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-
-function ChipsFecha({ etiqueta, fechas, llenos = [], valor, onElegir }) {
-  if (fechas.length === 0) {
-    return (
-      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, margin: 0 }}>
-        Por ahora no hay fechas disponibles. Escríbenos por WhatsApp y te buscamos un espacio.
-      </p>
-    );
+// ---------- Invita a un amigo ----------
+function InvitaAmigo({ datos }) {
+  const F = "'Inter', sans-serif";
+  const [copiado, setCopiado] = useState(false);
+  if (!datos) return null;
+  const mensaje = `Te regalo $100 de descuento en tu primer mantenimiento de plantas con Ámbitat 🌿 Además la app te dice cómo cuidar tus plantas con una foto: ${datos.link}`;
+  const pesos = (c) => `$${Math.round((c || 0) / 100).toLocaleString("es-MX")}`;
+  async function compartir() {
+    try {
+      if (navigator.share) return await navigator.share({ title: "Ámbitat", text: mensaje });
+    } catch {
+      return; // canceló
+    }
+    try {
+      await navigator.clipboard.writeText(mensaje);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
+    } catch {}
   }
+  const boton = { flex: 1, padding: "11px 0", borderRadius: 12, border: "none", fontFamily: F, fontWeight: 700, fontSize: 13.5, cursor: "pointer", textAlign: "center", textDecoration: "none" };
   return (
-    <div className="brotes-chips" role="radiogroup" aria-label={etiqueta}>
-      {fechas.map((f) => {
-        const elegida = f === valor;
-        const lleno = llenos.includes(f);
-        const d = new Date(f + "T12:00:00");
-        return (
-          <button
-            key={f}
-            type="button"
-            role="radio"
-            aria-checked={elegida}
-            aria-label={`${d.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}${lleno ? ", lleno" : ""}`}
-            disabled={lleno}
-            onClick={() => onElegir(f)}
-            style={{ ...chip(elegida), minWidth: 62, flexDirection: "column", padding: "8px 10px", opacity: lleno ? 0.45 : 1, cursor: lleno ? "not-allowed" : "pointer" }}
-          >
-            <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.8 }}>{DIA_CORTO[diaSemana(f)]}</span>
-            <span style={{ fontSize: 14, fontWeight: 800, textDecoration: lleno ? "line-through" : "none" }}>{d.getDate()}</span>
-            <span style={{ fontSize: 11, opacity: 0.8 }}>{lleno ? "Lleno" : d.toLocaleDateString("es-MX", { month: "short" }).replace(".", "")}</span>
-          </button>
-        );
-      })}
+    <div style={{ marginTop: 14, background: C.card, borderRadius: 20, padding: "16px 16px" }}>
+      <p style={{ fontFamily: F, fontWeight: 800, fontSize: 16, color: C.ink, margin: 0 }}>🎁 Invita a un amigo</p>
+      <p style={{ fontFamily: F, fontSize: 13, color: C.inkSoft, margin: "4px 0 12px", lineHeight: 1.45 }}>
+        Tu amigo recibe <strong>$100 de descuento</strong> en su primer mantenimiento y tú ganas <strong>$100 de crédito</strong> cuando lo pague.
+      </p>
+      <div style={{ background: C.tileBg, borderRadius: 12, padding: "10px 12px", fontFamily: F, fontSize: 13, color: C.ink, wordBreak: "break-all", marginBottom: 10 }}>
+        {datos.link.replace(/^https?:\/\//, "")}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={compartir} style={{ ...boton, background: C.green, color: "#fff" }}>
+          {copiado ? "¡Copiado!" : "Compartir"}
+        </button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(mensaje)}`} target="_blank" rel="noopener" style={{ ...boton, background: "#25D366", color: "#fff" }}>
+          WhatsApp
+        </a>
+      </div>
+      {(datos.amigosInvitados > 0 || datos.creditoDisponible > 0) && (
+        <p style={{ fontFamily: F, fontSize: 12.5, color: C.inkSoft, margin: "12px 0 0", lineHeight: 1.45 }}>
+          {datos.amigosInvitados === 1 ? "1 amigo llegó" : `${datos.amigosInvitados} amigos llegaron`} con tu enlace
+          {datos.creditoDisponible > 0 ? (
+            <>
+              {" · "}
+              <strong style={{ color: C.green }}>tienes {pesos(datos.creditoDisponible)} de crédito</strong> para tu próximo mantenimiento
+            </>
+          ) : null}
+          .
+        </p>
+      )}
     </div>
   );
 }
 
+// ---------- Calendario para elegir la fecha de la visita ----------
+// Colores: verde = hay lugar, ámbar = queda 1 lugar, tachado = lleno,
+// gris claro = ese día no hay servicio.
+const NOMBRES_DIAS_CAL = ["L", "M", "M", "J", "V", "S", "D"];
+
+// ---------- Invitación a instalar la app en la pantalla de inicio ----------
+function plataformaInstalar() {
+  if (typeof navigator === "undefined") return null;
+  const ua = navigator.userAgent || "";
+  const instalada =
+    window.navigator.standalone === true || window.matchMedia?.("(display-mode: standalone)").matches || window.matchMedia?.("(display-mode: fullscreen)").matches;
+  if (instalada) return null;
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (/Instagram|FBAN|FBAV|FB_IAB|TikTok|Line\//i.test(ua)) return "dentro-de-app";
+  if (ios) return /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua) ? "ios-otro" : "ios-safari";
+  if (/Android/i.test(ua)) return "android";
+  return null; // computadora: no se ofrece
+}
+
+const PASOS_INSTALAR = {
+  "ios-safari": [
+    ["⬆️", "Toca el botón Compartir", "Es el cuadrito con una flecha hacia arriba, en la barra de abajo (en iPad, arriba a la derecha)."],
+    ["➕", "Elige “Agregar a inicio”", "Desliza la lista hacia abajo si no la ves a la primera."],
+    ["✅", "Toca “Agregar”", "Listo: abre Ámbitat desde su ícono y activa los recordatorios con la 🔔."],
+  ],
+  "ios-otro": [
+    ["⬆️", "Toca el botón Compartir", "Está junto a la barra de direcciones (o en el menú ⋯)."],
+    ["➕", "Elige “Agregar a inicio”", "Si no aparece, abre ambitat.vercel.app en Safari y hazlo desde ahí."],
+    ["✅", "Ábrela desde su ícono", "En iPhone, los recordatorios solo llegan si la abres desde la pantalla de inicio."],
+  ],
+  android: [
+    ["⋮", "Toca el menú de tres puntos", "Arriba a la derecha de tu navegador."],
+    ["📲", "Elige “Instalar app”", "En algunos celulares dice “Agregar a la pantalla principal”."],
+    ["✅", "Confirma", "Ámbitat aparece junto a tus apps y se abre sin la barra del navegador."],
+  ],
+  "dentro-de-app": [
+    ["⋯", "Toca el menú ⋯ de arriba", "Estás viendo Ámbitat dentro de otra app (Instagram, Facebook...)."],
+    ["🌐", "Elige “Abrir en el navegador”", "Se abrirá en Safari o Chrome."],
+    ["📲", "Agrégala a tu pantalla de inicio", "Desde ahí ya te aparecerá la opción."],
+  ],
+};
+
+function AvisoInstalar({ plataforma, puedeInstalarDirecto, onInstalar, onVerPasos, onCerrar }) {
+  const F = "'Inter', sans-serif";
+  return (
+    <div style={{ marginTop: 14, background: C.card, borderRadius: 18, padding: "14px 14px 14px 16px", display: "flex", gap: 12, alignItems: "center", border: "1px solid " + C.cardLine }}>
+      <img src="/icon-192.png" alt="" style={{ width: 44, height: 44, borderRadius: 11, flexShrink: 0, boxShadow: "0 4px 10px -6px rgba(0,0,0,0.4)" }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontFamily: F, fontWeight: 800, fontSize: 14, color: C.ink }}>Ten Ámbitat a un toque</p>
+        <p style={{ margin: "2px 0 8px", fontFamily: F, fontSize: 12.5, color: C.inkSoft, lineHeight: 1.4 }}>
+          Agrégala a tu pantalla de inicio{plataforma?.startsWith("ios") ? ": en iPhone es la única forma de recibir los avisos de riego." : " y te llegan los avisos de riego."}
+        </p>
+        <button
+          onClick={puedeInstalarDirecto ? onInstalar : onVerPasos}
+          style={{ background: C.green, color: "#fff", border: "none", borderRadius: 999, padding: "8px 16px", fontFamily: F, fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+        >
+          {puedeInstalarDirecto ? "Instalar" : "Ver cómo"}
+        </button>
+      </div>
+      <button onClick={onCerrar} aria-label="Ahora no" style={{ alignSelf: "flex-start", background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 4, display: "flex" }}>
+        <Icon.X style={{ width: 16, height: 16 }} />
+      </button>
+    </div>
+  );
+}
+
+function PasosInstalar({ plataforma, onCerrar }) {
+  const F = "'Inter', sans-serif";
+  const pasos = PASOS_INSTALAR[plataforma] || PASOS_INSTALAR["ios-safari"];
+  return (
+    <div onClick={onCerrar} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(20,16,10,0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cómo agregar Ámbitat a tu pantalla de inicio"
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: "100%", maxWidth: 480, background: C.card, borderRadius: "24px 24px 0 0", padding: "20px 20px max(22px, env(safe-area-inset-bottom))", boxSizing: "border-box", animation: "brotesSlide 0.25s ease both" }}
+      >
+        <div style={{ width: 40, height: 4, borderRadius: 2, background: C.cardLine, margin: "0 auto 14px" }} />
+        <p style={{ margin: 0, fontFamily: F, fontWeight: 800, fontSize: 18, color: C.ink }}>Agrega Ámbitat a tu inicio</p>
+        <p style={{ margin: "4px 0 14px", fontFamily: F, fontSize: 13, color: C.inkSoft }}>Toma 10 segundos y no ocupa espacio como una app normal.</p>
+        <ol style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+          {pasos.map(([icono, titulo, texto], i) => (
+            <li key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 12, background: C.tileBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 800, color: C.ink, flexShrink: 0 }}>{icono}</span>
+              <span style={{ fontFamily: F }}>
+                <strong style={{ display: "block", fontSize: 14.5, color: C.ink }}>{i + 1}. {titulo}</strong>
+                <span style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.4 }}>{texto}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <button onClick={onCerrar} style={{ marginTop: 18, width: "100%", padding: "14px 0", borderRadius: 14, border: "none", background: C.green, color: "#fff", fontFamily: F, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>
+          Entendido
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Bienvenida de 3 pantallas (solo la primera vez) ----------
+const PASOS_PRIMERA_VEZ = [
+  {
+    titulo: "Toma una foto",
+    texto: "Apunta la cámara a cualquier planta. No necesitas saber cómo se llama.",
+  },
+  {
+    titulo: "Te decimos qué es y cómo cuidarla",
+    texto: "Su nombre, cuánta luz y agua necesita, y si tiene alguna plaga o problema.",
+  },
+  {
+    titulo: "Te avisamos cuándo regar",
+    texto: "Un recordatorio el día que le toca agua, y avisos si viene frío, calor o lluvia fuerte.",
+  },
+];
+
+function IlustracionPrimeraVez({ paso }) {
+  const F = "'Inter', sans-serif";
+  const marco = { position: "relative", width: 230, height: 230, margin: "0 auto" };
+  if (paso === 0) {
+    const esquina = (pos) => ({ position: "absolute", width: 34, height: 34, borderColor: "#fff", borderStyle: "solid", borderWidth: 0, ...pos });
+    return (
+      <div style={{ ...marco, background: C.dark, borderRadius: 36, boxShadow: "0 24px 50px -24px rgba(40,64,42,0.8)" }}>
+        <img src="/stages/s6.png" alt="" style={{ position: "absolute", inset: 30, width: 170, height: 170, objectFit: "contain", animation: "brotesFlota 3s ease-in-out infinite" }} />
+        <span style={esquina({ top: 18, left: 18, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 12 })} />
+        <span style={esquina({ top: 18, right: 18, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 12 })} />
+        <span style={esquina({ bottom: 18, left: 18, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 12 })} />
+        <span style={esquina({ bottom: 18, right: 18, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 12 })} />
+        <span style={{ position: "absolute", bottom: -24, left: "50%", transform: "translateX(-50%)", width: 56, height: 56, borderRadius: "50%", background: "#fff", border: "5px solid " + C.dark, boxShadow: "0 8px 18px -8px rgba(0,0,0,0.4)" }} />
+      </div>
+    );
+  }
+  if (paso === 1) {
+    const chip = (t, bg, color) => (
+      <span style={{ background: bg, color, borderRadius: 999, padding: "6px 10px", fontFamily: F, fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}>{t}</span>
+    );
+    return (
+      <div style={{ ...marco, height: "auto", width: 250, background: C.card, borderRadius: 26, padding: 16, boxSizing: "border-box", boxShadow: "0 24px 50px -24px rgba(40,64,42,0.6)" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ width: 70, height: 70, borderRadius: 18, background: C.tileBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <img src="/stages/s5.png" alt="" style={{ width: 58, height: 58, objectFit: "contain" }} />
+          </div>
+          <div style={{ textAlign: "left" }}>
+            <p style={{ margin: 0, fontFamily: F, fontWeight: 800, fontSize: 17, color: C.ink }}>Monstera</p>
+            <p style={{ margin: "2px 0 0", fontFamily: F, fontStyle: "italic", fontSize: 12, color: C.inkSoft }}>Monstera deliciosa</p>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 14 }}>
+          {chip("✅ Saludable", "rgba(63,93,62,0.12)", C.green)}
+          {chip("💧 Cada 7 días", "rgba(62,124,166,0.12)", C.blue)}
+          {chip("☀️ Luz indirecta", "rgba(214,162,61,0.2)", "#8a6216")}
+          {chip("🐾 Tóxica para mascotas", "rgba(156,59,46,0.1)", C.red)}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ ...marco, width: 260 }}>
+      <img src="/stages/s4.png" alt="" style={{ position: "absolute", left: 40, right: 40, bottom: 0, width: 180, height: 180, objectFit: "contain" }} />
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, background: "rgba(255,255,255,0.95)", borderRadius: 18, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", textAlign: "left", boxShadow: "0 16px 34px -16px rgba(0,0,0,0.45)", animation: "brotesNotif 0.5s 0.25s ease both" }}>
+        <img src="/icon-192.png" alt="" style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontFamily: F, fontWeight: 800, fontSize: 12.5, color: C.ink }}>Ámbitat 🌿 <span style={{ fontWeight: 500, color: C.inkSoft }}>· ahora</span></p>
+          <p style={{ margin: "2px 0 0", fontFamily: F, fontSize: 12.5, color: C.ink }}>Tu Monstera necesita agua hoy 💧</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrimeraVez({ onTerminar }) {
+  const F = "'Inter', sans-serif";
+  const [paso, setPaso] = useState(0);
+  const toque = useRef(null);
+  const ultimo = paso === PASOS_PRIMERA_VEZ.length - 1;
+  const ir = (n) => setPaso(Math.max(0, Math.min(PASOS_PRIMERA_VEZ.length - 1, n)));
+  useEffect(() => {
+    function tecla(e) {
+      if (e.key === "ArrowRight") setPaso((p) => Math.min(PASOS_PRIMERA_VEZ.length - 1, p + 1));
+      if (e.key === "ArrowLeft") setPaso((p) => Math.max(0, p - 1));
+    }
+    window.addEventListener("keydown", tecla);
+    return () => window.removeEventListener("keydown", tecla);
+  }, []);
+  const p = PASOS_PRIMERA_VEZ[paso];
+  return (
+    <div
+      className="brotes-primera"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Bienvenida a Ámbitat"
+      onTouchStart={(e) => (toque.current = e.touches[0].clientX)}
+      onTouchEnd={(e) => {
+        if (toque.current === null) return;
+        const dx = e.changedTouches[0].clientX - toque.current;
+        toque.current = null;
+        if (Math.abs(dx) > 50) ir(paso + (dx < 0 ? 1 : -1));
+      }}
+    >
+      <div className="brotes-primera-caja">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto" }} />
+          {!ultimo && (
+            <button onClick={() => onTerminar("explorar")} style={{ background: "none", border: "none", fontFamily: F, fontWeight: 700, fontSize: 14, color: C.ink, opacity: 0.7, cursor: "pointer", padding: "8px 4px" }}>
+              Saltar
+            </button>
+          )}
+        </div>
+
+        <div key={paso} className="brotes-primera-slide" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", minHeight: 0 }}>
+          <IlustracionPrimeraVez paso={paso} />
+          <p style={{ fontFamily: F, fontSize: 12.5, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", color: C.green, margin: "46px 0 8px" }}>
+            Paso {paso + 1} de {PASOS_PRIMERA_VEZ.length}
+          </p>
+          <h2 style={{ fontFamily: F, fontSize: 28, lineHeight: 1.15, letterSpacing: -0.6, color: C.ink, margin: 0, fontWeight: 800, maxWidth: 330 }}>{p.titulo}</h2>
+          <p style={{ fontFamily: F, fontSize: 15.5, lineHeight: 1.5, color: "#4a4130", margin: "12px 0 0", maxWidth: 330 }}>{p.texto}</p>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "18px 0" }}>
+          {PASOS_PRIMERA_VEZ.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => ir(i)}
+              aria-label={`Ir al paso ${i + 1}`}
+              aria-current={i === paso ? "step" : undefined}
+              style={{ width: i === paso ? 26 : 9, height: 9, borderRadius: 5, border: "none", padding: 0, cursor: "pointer", background: i === paso ? C.green : "rgba(34,28,19,0.22)", transition: "width .25s, background .25s" }}
+            />
+          ))}
+        </div>
+
+        {ultimo ? (
+          <>
+            <button onClick={() => onTerminar("foto")} style={{ width: "100%", padding: "16px 0", borderRadius: 16, border: "none", background: C.green, color: "#fff", fontFamily: F, fontWeight: 800, fontSize: 16, cursor: "pointer" }}>
+              📸 Tomar mi primera foto
+            </button>
+            <button onClick={() => onTerminar("explorar")} style={{ width: "100%", padding: "13px 0", marginTop: 6, borderRadius: 16, border: "none", background: "transparent", color: C.ink, fontFamily: F, fontWeight: 700, fontSize: 14.5, cursor: "pointer" }}>
+              Primero quiero ver la app
+            </button>
+          </>
+        ) : (
+          <button onClick={() => ir(paso + 1)} style={{ width: "100%", padding: "16px 0", borderRadius: 16, border: "none", background: C.green, color: "#fff", fontFamily: F, fontWeight: 800, fontSize: 16, cursor: "pointer" }}>
+            Siguiente
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Siluetas grises mientras algo carga ----------
+function Esqueleto({ w = "100%", h = 12, r = 6, style, enLinea = false }) {
+  // enLinea: dentro de un texto o botón (ahí no se vale un <div>)
+  const Tag = enLinea ? "span" : "div";
+  return <Tag className="brotes-esqueleto" aria-hidden="true" style={{ display: enLinea ? "inline-block" : "block", width: w, height: h, borderRadius: r, flexShrink: 0, ...style }} />;
+}
+
+function EsqueletoJardin() {
+  return (
+    <div role="status" aria-label="Cargando tu jardín">
+      <div style={{ background: C.card, borderRadius: 22, padding: "16px 16px 18px", marginTop: 6 }}>
+        <Esqueleto w="28%" h={16} />
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16 }}>
+            <Esqueleto w={40} h={40} r={12} />
+            <div style={{ flex: 1 }}>
+              <Esqueleto w={["58%", "46%", "64%"][i]} h={13} />
+              <Esqueleto w="34%" h={10} style={{ marginTop: 8 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="brotes-grid" style={{ marginTop: 18 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ background: C.card, borderRadius: 22, padding: 10 }}>
+            <Esqueleto h="auto" r={16} style={{ aspectRatio: "1 / 1" }} />
+            <Esqueleto w="70%" h={14} style={{ marginTop: 12 }} />
+            <Esqueleto w="44%" h={10} style={{ margin: "8px 0 6px" }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EsqueletoLista({ filas = 2, etiqueta = "Cargando" }) {
+  return (
+    <div role="status" aria-label={etiqueta} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {Array.from({ length: filas }, (_, i) => (
+        <div key={i} style={{ background: C.card, borderRadius: 16, padding: "14px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <Esqueleto w="45%" h={13} />
+            <Esqueleto w="62%" h={10} style={{ marginTop: 8 }} />
+            <Esqueleto w="30%" h={10} style={{ marginTop: 6 }} />
+          </div>
+          <Esqueleto w={64} h={22} r={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EsqueletoCalendario() {
+  return (
+    <div role="status" aria-label="Cargando fechas disponibles" style={{ background: C.tileBg, borderRadius: 16, padding: "12px 10px" }}>
+      <Esqueleto w="42%" h={14} style={{ margin: "2px auto 14px" }} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8, justifyItems: "center" }}>
+        {Array.from({ length: 35 }, (_, i) => (
+          <Esqueleto key={i} w={30} h={30} r={15} style={{ opacity: i % 7 > 4 ? 0.9 : 0.55 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Mientras se abre la sesión: la forma de la app, sin contenido.
+function EsqueletoApp() {
+  return (
+    <div role="status" aria-label="Abriendo Ámbitat" style={{ padding: "22px 20px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Esqueleto w="42%" h={28} r={8} />
+        <Esqueleto w="30%" h={26} r={8} />
+      </div>
+      <Esqueleto w="55%" h={11} style={{ marginTop: 10, marginBottom: 18 }} />
+      <EsqueletoJardin />
+    </div>
+  );
+}
+
+function CalendarioReserva({ etiqueta, fechas, libres = {}, llenos = [], valor, onElegir }) {
+  const F = "'Inter', sans-serif";
+  const hoy = diaCDMX();
+  const ultima = fechas[fechas.length - 1] || sumarDias(hoy, DIAS_MAXIMOS_ANTICIPACION);
+  const mesInicial = (valor || fechas.find((f) => !llenos.includes(f)) || fechas[0] || hoy).slice(0, 7);
+  const [mes, setMes] = useState(mesInicial);
+  const disponibles = useMemo(() => new Set(fechas), [fechas]);
+
+  if (fechas.length === 0) {
+    return (
+      <p style={{ fontFamily: F, fontSize: 13, color: C.inkSoft, margin: 0 }}>
+        Por ahora no hay fechas disponibles. Escríbenos por WhatsApp y te buscamos un espacio.
+      </p>
+    );
+  }
+
+  const [y, m] = mes.split("-").map(Number);
+  const diasDelMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const hueco = (diaSemana(`${mes}-01`) + 6) % 7; // la semana empieza en lunes
+  const titulo = new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString("es-MX", { month: "long", year: "numeric", timeZone: "UTC" });
+  const mover = (delta) => {
+    const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+    setMes(d.toISOString().slice(0, 7));
+  };
+  const hayAntes = mes > hoy.slice(0, 7);
+  const hayDespues = mes < ultima.slice(0, 7);
+
+  const celdas = [];
+  for (let k = 0; k < hueco; k++) celdas.push(null);
+  for (let d = 1; d <= diasDelMes; d++) celdas.push(`${mes}-${String(d).padStart(2, "0")}`);
+
+  const flecha = (activa) => ({
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    border: "none",
+    background: activa ? C.tileBg : "transparent",
+    color: activa ? C.ink : C.cardLine,
+    fontSize: 20,
+    fontWeight: 700,
+    cursor: activa ? "pointer" : "default",
+  });
+
+  const elegidaLibres = valor ? libres[valor] : undefined;
+
+  return (
+    <div role="group" aria-label={etiqueta} style={{ background: C.tileBg, borderRadius: 18, padding: "10px 10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <button type="button" onClick={() => hayAntes && mover(-1)} disabled={!hayAntes} aria-label="Mes anterior" style={flecha(hayAntes)}>‹</button>
+        <p style={{ fontFamily: F, fontWeight: 800, fontSize: 15, color: C.ink, margin: 0 }}>{titulo.charAt(0).toUpperCase() + titulo.slice(1)}</p>
+        <button type="button" onClick={() => hayDespues && mover(1)} disabled={!hayDespues} aria-label="Mes siguiente" style={flecha(hayDespues)}>›</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 4 }}>
+        {NOMBRES_DIAS_CAL.map((n, i) => (
+          <div key={i} aria-hidden="true" style={{ textAlign: "center", fontFamily: F, fontSize: 11, fontWeight: 700, color: C.inkSoft, padding: "2px 0 4px" }}>
+            {n}
+          </div>
+        ))}
+        {celdas.map((f, i) => {
+          if (!f) return <div key={"v" + i} />;
+          const abierta = disponibles.has(f);
+          const lleno = abierta && llenos.includes(f);
+          const quedan = libres[f];
+          const pocos = abierta && !lleno && quedan === 1;
+          const elegida = f === valor;
+          const puede = abierta && !lleno;
+          let fondo = "transparent";
+          let color = "rgba(107,96,71,0.45)";
+          if (elegida) {
+            fondo = C.green;
+            color = "#fff";
+          } else if (pocos) {
+            fondo = "rgba(214,162,61,0.32)";
+            color = "#7a5208";
+          } else if (puede) {
+            fondo = "rgba(63,93,62,0.24)";
+            color = C.green;
+          } else if (lleno) {
+            fondo = "repeating-linear-gradient(135deg, rgba(156,59,46,0.10) 0 4px, transparent 4px 8px)";
+            color = C.red;
+          }
+          const fecha = new Date(f + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
+          return (
+            <button
+              key={f}
+              type="button"
+              disabled={!puede}
+              aria-pressed={elegida}
+              aria-label={`${fecha}${lleno ? ", lleno" : !abierta ? ", sin servicio" : pocos ? ", queda 1 lugar" : ", disponible"}`}
+              onClick={() => onElegir(f)}
+              style={{
+                position: "relative",
+                minHeight: 40,
+                aspectRatio: "1 / 1",
+                borderRadius: 12,
+                border: f === hoy && !elegida ? "1.5px solid " + C.inkSoft : "none",
+                background: fondo,
+                color,
+                fontFamily: F,
+                fontSize: 14,
+                fontWeight: puede || elegida ? 800 : 500,
+                textDecoration: lleno ? "line-through" : "none",
+                cursor: puede ? "pointer" : "default",
+                padding: 0,
+              }}
+            >
+              {Number(f.slice(8))}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "4px 12px", marginTop: 10 }}>
+        {[
+          ["rgba(63,93,62,0.35)", "Disponible"],
+          ["rgba(214,162,61,0.6)", "Último lugar"],
+          ["rgba(156,59,46,0.45)", "Lleno"],
+        ].map(([c, t]) => (
+          <span key={t} style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: F, fontSize: 11.5, color: C.inkSoft }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: c }} /> {t}
+          </span>
+        ))}
+      </div>
+      {valor && (
+        <p style={{ fontFamily: F, fontSize: 13, fontWeight: 700, color: C.ink, margin: "10px 2px 0", textAlign: "center" }}>
+          {(() => {
+            const t = new Date(valor + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" });
+            return t.charAt(0).toUpperCase() + t.slice(1);
+          })()}
+          {typeof elegidaLibres === "number" && elegidaLibres > 0 && (
+            <span style={{ fontWeight: 500, color: C.inkSoft }}>
+              {" · "}
+              {elegidaLibres === 1 ? "queda 1 lugar" : `quedan ${elegidaLibres} lugares`}
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------- Elegir fecha y hora de una visita ----------
 function ChipsHora({ etiqueta, horarios, ocupadas, valor, cargando, onElegir }) {
   return (
     <div role="radiogroup" aria-label={etiqueta} aria-busy={cargando ? "true" : "false"} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1735,7 +2233,7 @@ function pendientesDeHoy(garden, reservaciones) {
   return tareas.sort((a, b) => a.orden - b.orden);
 }
 
-function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onAbrirPlanta, onFoto, onAbrirCita }) {
+function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onAbrirPlanta, onFoto, onAbrirCita, clima, temporada }) {
   const [verTodo, setVerTodo] = useState(false);
   if (garden.length === 0) return null;
   const F = "'Inter', sans-serif";
@@ -1750,6 +2248,26 @@ function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onA
         <p style={{ fontFamily: F, fontWeight: 800, fontSize: 18, color: C.ink, margin: 0, letterSpacing: "-0.01em" }}>Hoy</p>
         <p style={{ fontFamily: F, fontSize: 12, color: C.inkSoft, margin: 0 }}>{fecha.charAt(0).toUpperCase() + fecha.slice(1)}</p>
       </div>
+      {[clima, temporada].filter(Boolean).map((a) => (
+        <div
+          key={a.id || a.tipo}
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 14,
+            background: a === clima ? "rgba(214,162,61,0.22)" : "rgba(63,93,62,0.09)",
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1.2 }}>{a.emoji}</span>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: "block", fontFamily: F, fontWeight: 700, fontSize: 13.5, color: C.ink }}>{a.titulo}</span>
+            <span style={{ display: "block", fontFamily: F, fontSize: 12.5, color: C.inkSoft, marginTop: 2, lineHeight: 1.4 }}>{a.texto}</span>
+          </span>
+        </div>
+      ))}
       {tareas.length === 0 ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0 10px" }}>
           <span aria-hidden="true" style={{ fontSize: 24 }}>🌿</span>
@@ -1803,7 +2321,7 @@ function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onA
 }
 
 // ---------- Detalle de una reservación: ver, cambiar fecha o cancelar ----------
-function DetalleReservacion({ r, fechasReservables, diasLlenos, horariosActivos, onCerrar, onActualizada }) {
+function DetalleReservacion({ r, fechasReservables, diasLlenos, libresDias, horariosActivos, onCerrar, onActualizada }) {
   const F = "'Inter', sans-serif";
   const [modo, setModo] = useState("ver"); // ver | cambiar | cancelar
   const [nuevaFecha, setNuevaFecha] = useState(null);
@@ -1996,9 +2514,10 @@ function DetalleReservacion({ r, fechasReservables, diasLlenos, horariosActivos,
               Sin costo. Tu cita actual: {new Date(r.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" })} · {r.hora}
             </p>
             <p style={etiquetaCampo}>Nueva fecha</p>
-            <ChipsFecha
+            <CalendarioReserva
               etiqueta="Nueva fecha"
               fechas={fechasReservables}
+              libres={libresDias}
               llenos={(diasLlenos || []).filter((f) => f !== r.fecha)}
               valor={nuevaFecha}
               onElegir={(f) => {
@@ -2255,6 +2774,34 @@ export default function BrotesApp() {
   }
   const guardandoNombreRef = useRef(false);
 
+  // ---------- Compartir la planta como imagen ----------
+  const [imagenCompartir, setImagenCompartir] = useState(null); // null | "cargando" | { url, archivo, texto }
+  async function prepararImagen(plant) {
+    setImagenCompartir("cargando");
+    try {
+      const { crearImagenPlanta } = await import("../lib/imagenPlanta");
+      // Si tiene cuenta, la imagen lleva su enlace de invitación.
+      const datosRef = referidos || (!esAnonimo ? await cargarReferidos() : null);
+      const enlace = (datosRef?.link || "https://ambitat.vercel.app").replace(/^https?:\/\//, "");
+      const estadoTexto = (ESTADO_STYLES[plant.estado_general] || ESTADO_STYLES.regular).label;
+      const blob = await crearImagenPlanta(plant, { enlace, estadoTexto });
+      const nombre = `${(plant.nombre_comun || "mi-planta").toLowerCase().replace(/[^a-z0-9]+/gi, "-")}-ambitat.png`;
+      setImagenCompartir({
+        url: URL.createObjectURL(blob),
+        archivo: new File([blob], nombre, { type: "image/png" }),
+        texto: `Mira mi ${plant.nombre_comun || "planta"} 🌿 La cuido con Ámbitat: ${datosRef?.link || "https://ambitat.vercel.app"}`,
+      });
+    } catch (err) {
+      console.error("No se pudo crear la imagen:", err);
+      setImagenCompartir(null);
+      setAviso("No se pudo crear la imagen. Intenta de nuevo.");
+    }
+  }
+  function cerrarImagen() {
+    if (imagenCompartir?.url) URL.revokeObjectURL(imagenCompartir.url);
+    setImagenCompartir(null);
+  }
+
   // ---------- "Ya la regué" ----------
   // Registra el riego sin tener que tomar foto. Cuenta para la racha igual que
   // una foto de seguimiento (regar varias veces el mismo día cuenta una vez).
@@ -2424,7 +2971,7 @@ export default function BrotesApp() {
         const ocupadas = data.ocupadas || [];
         const horarios = data.horarios || HORARIOS_DISPONIBLES;
         setHorasOcupadas(ocupadas);
-        if (data.fechas) setDisponibilidad({ fechas: data.fechas, diasLlenos: data.diasLlenos || [], horarios });
+        aplicarDisponibilidad(data);
         setReservaHora((actual) => {
           if (horarios.includes(actual) && !ocupadas.includes(actual)) return actual;
           return horarios.find((h) => !ocupadas.includes(h)) || actual;
@@ -2441,22 +2988,41 @@ export default function BrotesApp() {
     };
   }, [reservaFecha]);
 
-  // Qué fechas y horas se pueden reservar: lo decide tu agenda (/admin → Agenda).
+  // Qué fechas y horas se pueden reservar: lo decide tu agenda (/admin → Servicio).
   // Mientras carga se muestran los fines de semana, como antes.
-  const [disponibilidad, setDisponibilidad] = useState(null); // { fechas, diasLlenos, horarios }
+  const [disponibilidad, setDisponibilidad] = useState(null); // { fechas, diasLlenos, libres, horarios, tamanos }
+  function aplicarDisponibilidad(d) {
+    if (!Array.isArray(d?.fechas)) return;
+    setDisponibilidad({
+      fechas: d.fechas,
+      diasLlenos: d.diasLlenos || [],
+      libres: d.libres || {},
+      horarios: d.horarios || HORARIOS_DISPONIBLES,
+      tamanos: Array.isArray(d.tamanos) && d.tamanos.length ? d.tamanos : null,
+    });
+  }
+  const [disponibilidadFallo, setDisponibilidadFallo] = useState(false);
   async function cargarDisponibilidad() {
     try {
       const r = await fetch("/api/horarios-ocupados");
-      if (!r.ok) return;
-      const d = await r.json();
-      if (Array.isArray(d.fechas)) setDisponibilidad({ fechas: d.fechas, diasLlenos: d.diasLlenos || [], horarios: d.horarios || HORARIOS_DISPONIBLES });
+      if (r.ok) {
+        const d = await r.json();
+        if (Array.isArray(d?.fechas)) return aplicarDisponibilidad(d);
+      }
     } catch {}
+    // Si no se pudo, se muestran las fechas de siempre (el servidor vuelve a revisar al reservar).
+    setDisponibilidadFallo(true);
   }
   useEffect(() => {
     if (screen === "tienda") cargarDisponibilidad();
   }, [screen]);
   const horariosActivos = disponibilidad?.horarios || HORARIOS_DISPONIBLES;
+  // Precios vigentes (los editas en /admin → Servicio); mientras cargan, los de siempre.
+  const tamanosVigentes = disponibilidad?.tamanos || TAMANOS;
+  const precioDesde = Math.min(...tamanosVigentes.map((t) => t.precio));
   const diasLlenos = disponibilidad?.diasLlenos || [];
+  // Mientras llegan precios y fechas reales, siluetas (para no enseñar datos viejos).
+  const disponibilidadCargando = !disponibilidad && !disponibilidadFallo;
   const fechasReservables =
     disponibilidad?.fechas ||
     (() => {
@@ -2525,6 +3091,7 @@ export default function BrotesApp() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           tamano: reservaTamano,
+          precioVisto: tamanosVigentes.find((t) => t.key === reservaTamano)?.precio,
           nombre: reservaNombre,
           telefono: reservaTelefono,
           correo: reservaCorreo,
@@ -2535,6 +3102,8 @@ export default function BrotesApp() {
         }),
       });
       const data = await response.json().catch(() => ({}));
+      // El precio cambió mientras reservaba: se muestra el nuevo antes de cobrar.
+      if (data.precioNuevo) cargarDisponibilidad();
       if (!response.ok || !data.url) throw new Error(data.error || "No pudimos iniciar el pago.");
       window.location.href = data.url; // redirige a Stripe Checkout (tarjeta u OXXO)
     } catch (err) {
@@ -2602,6 +3171,66 @@ export default function BrotesApp() {
   const [usuarioCorreo, setUsuarioCorreo] = useState("");
   // Por qué se está pidiendo la cuenta (null = no se muestra la pantalla).
   const [cuentaMotivo, setCuentaMotivo] = useState(null); // entrar | guardar | plantas | reservar | recordatorios
+
+  // ---------- De dónde llegó: QR de un vivero (?v=) o invitación de un amigo (?ref=) ----------
+  const [bienvenida, setBienvenida] = useState(null); // { tipo: "vivero", nombre } | { tipo: "amigo" }
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const v = params.get("v");
+      const ref = params.get("ref");
+      if (!v && !ref) return;
+      const previo = JSON.parse(localStorage.getItem("ambitat-origen") || "null");
+      if (!previo) localStorage.setItem("ambitat-origen", JSON.stringify({ v: v || null, ref: ref ? ref.toUpperCase() : null }));
+      params.delete("v");
+      params.delete("ref");
+      const resto = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (resto ? "?" + resto : "") + window.location.hash);
+      if (ref) setBienvenida({ tipo: "amigo" });
+      else
+        fetch(`/api/origen?v=${encodeURIComponent(v)}`)
+          .then((r) => r.json())
+          .then((d) => setBienvenida({ tipo: "vivero", nombre: d.nombre || null }))
+          .catch(() => setBienvenida({ tipo: "vivero", nombre: null }));
+    } catch {}
+  }, []);
+  // Se anota una vez por cuenta (también si después entra con otra cuenta).
+  useEffect(() => {
+    if (!userId) return;
+    let origen = null;
+    try {
+      origen = JSON.parse(localStorage.getItem("ambitat-origen") || "null");
+    } catch {}
+    if (!origen || (origen.enviadoA || []).includes(userId)) return;
+    (async () => {
+      try {
+        const token = await tokenSesion();
+        const r = await fetch("/api/origen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ v: origen.v, ref: origen.ref }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (d.ok) localStorage.setItem("ambitat-origen", JSON.stringify({ ...origen, enviadoA: [...(origen.enviadoA || []), userId] }));
+      } catch {}
+    })();
+  }, [userId]);
+
+  // ---------- Invita a un amigo ----------
+  const [referidos, setReferidos] = useState(null); // { codigo, link, creditoDisponible, amigosInvitados, ... }
+  const [descuentoReserva, setDescuentoReserva] = useState(null); // { total, bienvenida } para el tamaño elegido
+  async function cargarReferidos(tamano) {
+    try {
+      const token = await tokenSesion();
+      const r = await fetch(`/api/referidos${tamano ? `?tamano=${tamano}` : ""}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) return null;
+      const d = await r.json();
+      setReferidos(d);
+      return d;
+    } catch {
+      return null;
+    }
+  }
   const LIMITE_PLANTAS_SIN_CUENTA = 3;
   // Error que trae la dirección al volver de Google o de un enlace de correo.
   // Se lee aquí (y no en la pantalla de cuenta) para no perderlo mientras carga.
@@ -2635,6 +3264,8 @@ export default function BrotesApp() {
     setSugerenciaEnviada(false);
     setSugerenciaError(null);
     setNotifError(null);
+    setReferidos(null);
+    setDescuentoReserva(null);
     setAviso(null);
     setFichaError(null);
     setNameDraft("");
@@ -3138,11 +3769,77 @@ export default function BrotesApp() {
     setIsSaved(true);
   }
 
+  // ---------- Bienvenida de 3 pantallas (solo la primera vez) ----------
+  const [primeraVez, setPrimeraVez] = useState(false);
+  useEffect(() => {
+    if (authEstado !== "lista" || loadingGarden || gardenError) return;
+    let vista = false;
+    try {
+      vista = localStorage.getItem("ambitat-bienvenida-vista") === "1";
+      // Quien ya tiene plantas ya sabe cómo funciona: no se le enseña.
+      if (!vista && garden.length > 0) localStorage.setItem("ambitat-bienvenida-vista", "1");
+    } catch {}
+    if (!vista && garden.length === 0 && !window.location.search.includes("pago=")) setPrimeraVez(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authEstado, loadingGarden, gardenError]);
+  function terminarPrimeraVez(accion) {
+    try {
+      localStorage.setItem("ambitat-bienvenida-vista", "1");
+    } catch {}
+    setPrimeraVez(false);
+    if (accion === "foto") openCamera("new");
+  }
+
+  // ---------- Invitación a instalar (después de su primera planta) ----------
+  const [plataforma] = useState(() => plataformaInstalar());
+  const [puedeInstalarDirecto, setPuedeInstalarDirecto] = useState(() => typeof window !== "undefined" && !!window.__ambitatInstalar);
+  const [instalarCerrado, setInstalarCerrado] = useState(() => {
+    try {
+      if (localStorage.getItem("ambitat-instalada") === "1") return true;
+      const t = Number(localStorage.getItem("ambitat-instalar-cerrado") || 0);
+      return Date.now() - t < 14 * 86400000; // se vuelve a ofrecer en 2 semanas
+    } catch {
+      return false;
+    }
+  });
+  const [pasosInstalar, setPasosInstalar] = useState(false);
+  useEffect(() => {
+    const alCambiar = () => {
+      setPuedeInstalarDirecto(!!window.__ambitatInstalar);
+      try {
+        if (localStorage.getItem("ambitat-instalada") === "1") setInstalarCerrado(true);
+      } catch {}
+    };
+    window.addEventListener("ambitat-instalable", alCambiar);
+    return () => window.removeEventListener("ambitat-instalable", alCambiar);
+  }, []);
+  function cerrarAvisoInstalar() {
+    try {
+      localStorage.setItem("ambitat-instalar-cerrado", String(Date.now()));
+    } catch {}
+    setInstalarCerrado(true);
+  }
+  async function instalarDirecto() {
+    const e = window.__ambitatInstalar;
+    if (!e) return setPasosInstalar(true);
+    try {
+      await e.prompt();
+      const { outcome } = await e.userChoice;
+      window.__ambitatInstalar = null;
+      setPuedeInstalarDirecto(false);
+      if (outcome === "accepted") setInstalarCerrado(true);
+      else cerrarAvisoInstalar();
+    } catch {
+      setPasosInstalar(true);
+    }
+  }
+  const mostrarAvisoInstalar = !!plataforma && !instalarCerrado && !primeraVez && garden.length > 0;
+
   // ---------- Botón "Atrás" del celular ----------
   // Sin esto, "Atrás" cerraba la app. Ahora cierra lo que esté abierto encima
   // (tip, detalle de reserva, planta) o regresa al jardín.
   const nivelAbierto = authEstado !== "lista" ? null :
-    cuentaMotivo ? "cuenta" : ticket ? "ticket" : activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
+    cuentaMotivo ? "cuenta" : primeraVez ? "primera" : pasosInstalar ? "instalar" : imagenCompartir && imagenCompartir !== "cargando" ? "imagen" : ticket ? "ticket" : activeTip !== null ? "tip" : reservaDetalle ? "reserva" : selectedPlant ? "planta" : screen !== "jardin" ? "pantalla" : null;
   const historialRef = useRef({ agregado: false, ignorarSiguiente: false });
   // La tecla Esc cierra lo que esté abierto (igual que "Atrás").
   const nivelRef = useRef(null);
@@ -3157,6 +3854,9 @@ export default function BrotesApp() {
   const cerrarRef = useRef(() => {});
   cerrarRef.current = () => {
     if (cuentaMotivo) cerrarCuenta();
+    else if (primeraVez) terminarPrimeraVez("explorar");
+    else if (pasosInstalar) setPasosInstalar(false);
+    else if (imagenCompartir && imagenCompartir !== "cargando") cerrarImagen();
     else if (ticket) setTicket(null);
     else if (activeTip !== null) setActiveTip(null);
     else if (reservaDetalle) setReservaDetalle(null);
@@ -3199,6 +3899,40 @@ export default function BrotesApp() {
   }, []);
 
   const activePlant = garden.find((p) => p.id === selectedPlant);
+
+  // ---------- Clima y temporada (tarjeta "Hoy") ----------
+  const [climaAviso, setClimaAviso] = useState(null);
+  const hayPlantas = garden.length > 0;
+  useEffect(() => {
+    if (!hayPlantas) return;
+    fetch("/api/clima")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setClimaAviso(d?.aviso || null))
+      .catch(() => {});
+  }, [hayPlantas]);
+  const consejoTemporada = useMemo(() => {
+    if (!hayPlantas) return null;
+    const [anio, mes, dia] = diaCDMX().split("-").map(Number);
+    const semana = Math.floor((Date.UTC(anio, mes - 1, dia) / 86400000 + 3) / 7); // cambia cada semana
+    return consejoDeTemporada(mes, garden.map((p) => p.nombre_comun), semana);
+  }, [hayPlantas, garden]);
+
+  // Invita a un amigo: se carga en Mi cuenta y en la Tienda (solo con cuenta).
+  useEffect(() => {
+    if (authEstado === "lista" && !esAnonimo && (screen === "cuenta" || screen === "tienda")) cargarReferidos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, esAnonimo, authEstado, userId]);
+  // Descuento para el tamaño elegido, antes de pagar.
+  useEffect(() => {
+    setDescuentoReserva(null);
+    if (tiendaPaso !== "datos" || !reservaTamano || esAnonimo) return;
+    let vigente = true;
+    cargarReferidos(reservaTamano).then((d) => vigente && d?.descuento && setDescuentoReserva(d.descuento));
+    return () => {
+      vigente = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiendaPaso, reservaTamano, esAnonimo]);
   // Al abrir una planta sin ficha de cuidado, se prepara.
   useEffect(() => {
     if (activePlant && !activePlant.ficha) cargarFicha(activePlant);
@@ -3209,6 +3943,8 @@ export default function BrotesApp() {
     <div className="brotes-root" lang="es" style={{ display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
       <IntroAnimada />
+      {primeraVez && <PrimeraVez onTerminar={terminarPrimeraVez} />}
+      {pasosInstalar && <PasosInstalar plataforma={plataforma} onCerrar={() => setPasosInstalar(false)} />}
       <div className="brotes-shell">
         {authEstado !== "lista" ? (
           <div className="brotes-scroll">
@@ -3641,7 +4377,37 @@ export default function BrotesApp() {
                 </button>
               )}
 
+              {bienvenida && (
+                <div style={{ marginTop: 14, background: C.green, color: "#fff", borderRadius: 18, padding: "14px 14px 14px 16px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span aria-hidden="true" style={{ fontSize: 22 }}>{bienvenida.tipo === "amigo" ? "🎁" : "🌱"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, margin: 0 }}>
+                      {bienvenida.tipo === "amigo" ? "¡Un amigo te invitó!" : bienvenida.nombre ? `¡Hola! Vienes de ${bienvenida.nombre}` : "¡Bienvenido a Ámbitat!"}
+                    </p>
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, margin: "3px 0 10px", lineHeight: 1.4, opacity: 0.92 }}>
+                      {bienvenida.tipo === "amigo"
+                        ? "Tienes $100 de descuento en tu primer mantenimiento a domicilio. Mientras, tómale foto a una planta y te decimos cómo cuidarla."
+                        : "¿Compraste una planta nueva? Tómale foto y te decimos qué es, cómo cuidarla y cuándo regarla."}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setBienvenida(null);
+                        openCamera("new");
+                      }}
+                      style={{ background: C.cream, color: C.green, border: "none", borderRadius: 999, padding: "9px 16px", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}
+                    >
+                      📸 Escanear mi planta
+                    </button>
+                  </div>
+                  <button onClick={() => setBienvenida(null)} aria-label="Cerrar bienvenida" style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 4, display: "flex" }}>
+                    <Icon.X style={{ width: 16, height: 16 }} />
+                  </button>
+                </div>
+              )}
+
               <HoyEnTuJardin
+                clima={climaAviso}
+                temporada={consejoTemporada}
                 garden={garden}
                 reservaciones={misReservaciones}
                 regadaHoy={regadaHoy}
@@ -3654,6 +4420,15 @@ export default function BrotesApp() {
                   setReservaDetalle(r);
                 }}
               />
+              {mostrarAvisoInstalar && (
+                <AvisoInstalar
+                  plataforma={plataforma}
+                  puedeInstalarDirecto={puedeInstalarDirecto}
+                  onInstalar={instalarDirecto}
+                  onVerPasos={() => setPasosInstalar(true)}
+                  onCerrar={cerrarAvisoInstalar}
+                />
+              )}
 
               <div style={{ display: "flex", gap: 12, overflowX: "auto", marginTop: 20, padding: "4px 2px 8px", alignItems: "stretch" }}>
                 {garden.length > 0 && (() => {
@@ -3803,9 +4578,7 @@ export default function BrotesApp() {
             </div>
             <div style={{ flex: 1, padding: "6px 16px 20px" }}>
               {loadingGarden ? (
-                <p style={{ textAlign: "center", padding: "60px 0", fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft }}>
-                  Cargando tu jardín...
-                </p>
+                <EsqueletoJardin />
               ) : gardenError ? (
                 <div style={{ textAlign: "center", padding: "50px 20px" }}>
                   <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14.5, color: C.red, margin: 0, lineHeight: 1.4 }}>{gardenError}</p>
@@ -3942,6 +4715,13 @@ export default function BrotesApp() {
                 <BotonRegar plant={activePlant} regadaHoy={regadaHoy(activePlant)} guardando={regando === activePlant.id} onRegar={marcarRegada} />
               </div>
             ) : null}
+            <button
+              onClick={() => prepararImagen(activePlant)}
+              disabled={imagenCompartir === "cargando"}
+              style={{ marginTop: 10, width: "100%", minHeight: 46, borderRadius: 14, border: "1px solid " + C.cardLine, background: "transparent", color: C.ink, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+            >
+              {imagenCompartir === "cargando" ? "Preparando imagen..." : "📤 Compartir mi planta"}
+            </button>
 
             <FichaCuidado
               ficha={activePlant.ficha}
@@ -4059,7 +4839,10 @@ export default function BrotesApp() {
                 Cerrar sesión
               </button>
             </div>
+            <InvitaAmigo datos={referidos} />
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, textAlign: "center", margin: "18px 0 0", lineHeight: 1.6 }}>
+              <a href="/conoce" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Qué es Ámbitat</a>
+              {" · "}
               <a href="/terminos" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Términos y condiciones</a>
               {" · "}
               <a href="/privacidad" target="_blank" rel="noopener" style={{ color: C.inkSoft, fontWeight: 700 }}>Aviso de privacidad</a>
@@ -4308,7 +5091,7 @@ export default function BrotesApp() {
             )}
 
             {(() => {
-              const tamanoElegido = tamanoPorClave(reservaTamano);
+              const tamanoElegido = tamanosVigentes.find((t) => t.key === reservaTamano) || null;
               const atras = (paso) => (
                 <button
                   onClick={() => {
@@ -4354,11 +5137,21 @@ export default function BrotesApp() {
                       Mantenimiento de plantas
                     </p>
                     <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, color: C.green, margin: 0, whiteSpace: "nowrap" }}>
-                      {tiendaPaso === "datos" && tamanoElegido
-                        ? `${formatoPrecio(tamanoElegido.precio)} MXN`
-                        : `Desde ${formatoPrecio(PRECIO_DESDE_CENTAVOS)}`}
+                      {disponibilidadCargando ? (
+                        <Esqueleto enLinea w={92} h={16} style={{ verticalAlign: "middle" }} />
+                      ) : tiendaPaso === "datos" && tamanoElegido ? (
+                        `${formatoPrecio(tamanoElegido.precio - (descuentoReserva?.total || 0))} MXN`
+                      ) : (
+                        `Desde ${formatoPrecio(precioDesde)}`
+                      )}
                     </p>
                   </div>
+                  {tiendaPaso === "datos" && tamanoElegido && descuentoReserva?.total > 0 && (
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.green, fontWeight: 700, margin: "0 0 4px" }}>
+                      🎁 <span style={{ textDecoration: "line-through", color: C.inkSoft, fontWeight: 500 }}>{formatoPrecio(tamanoElegido.precio)}</span>{" "}
+                      {descuentoReserva.bienvenida > 0 ? "Descuento de bienvenida por invitación" : "Usando tu crédito por invitar amigos"}: −{formatoPrecio(descuentoReserva.total)}
+                    </p>
+                  )}
                   <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 4px", lineHeight: 1.4 }}>
                     {tiendaPaso === "datos" && tamanoElegido
                       ? `Jardín ${tamanoElegido.nombre.toLowerCase()} · ${tamanoElegido.incluye[0]}`
@@ -4382,7 +5175,7 @@ export default function BrotesApp() {
                         ¿Cuál es el tamaño de tu jardín?
                       </p>
                       <div className="brotes-tamanos" role="radiogroup" aria-label="Tamaño del jardín">
-                        {TAMANOS.map((t) => {
+                        {tamanosVigentes.map((t) => {
                           const activo = reservaTamano === t.key;
                           return (
                             <button
@@ -4415,7 +5208,7 @@ export default function BrotesApp() {
                                 </span>
                               </span>
                               <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 18, color: C.green, margin: "2px 0 8px" }}>
-                                {formatoPrecio(t.precio)}
+                                {disponibilidadCargando ? <Esqueleto enLinea w={70} h={18} style={{ margin: "3px 0" }} /> : formatoPrecio(t.precio)}
                               </span>
                               {t.incluye.map((linea) => (
                                 <span key={linea} style={{ display: "flex", gap: 6, fontFamily: "'Inter', sans-serif", fontSize: 12, color: C.inkSoft, lineHeight: 1.35, marginTop: 4 }}>
@@ -4431,9 +5224,9 @@ export default function BrotesApp() {
                         <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
                       )}
                       {botonPrincipal(
-                        tamanoElegido ? `Continuar · ${formatoPrecio(tamanoElegido.precio)}` : "Elige un tamaño",
+                        disponibilidadCargando ? "Revisando precios..." : tamanoElegido ? `Continuar · ${formatoPrecio(tamanoElegido.precio)}` : "Elige un tamaño",
                         () => setTiendaPaso("datos"),
-                        !tamanoElegido
+                        !tamanoElegido || disponibilidadCargando
                       )}
                     </>
                   )}
@@ -4479,7 +5272,14 @@ export default function BrotesApp() {
                           style={estiloCampo}
                         />
                         <p style={etiquetaCampo}>Fecha</p>
-                        <ChipsFecha etiqueta="Fecha de la visita" fechas={fechasReservables} llenos={diasLlenos} valor={reservaFecha} onElegir={setReservaFecha} />
+                        {disponibilidadCargando ? <EsqueletoCalendario /> : <CalendarioReserva
+                          etiqueta="Fecha de la visita"
+                          fechas={fechasReservables}
+                          libres={disponibilidad?.libres}
+                          llenos={diasLlenos}
+                          valor={reservaFecha}
+                          onElegir={setReservaFecha}
+                        />}
                         {reservaFecha && (
                           <>
                             <p style={etiquetaCampo}>Hora</p>
@@ -4513,7 +5313,7 @@ export default function BrotesApp() {
                         <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
                       )}
                       {botonPrincipal(
-                        reservando ? "Preparando pago..." : `Reservar y pagar ${tamanoElegido ? formatoPrecio(tamanoElegido.precio) : ""}`,
+                        reservando ? "Preparando pago..." : `Reservar y pagar ${tamanoElegido ? formatoPrecio(tamanoElegido.precio - (descuentoReserva?.total || 0)) : ""}`,
                         reservarYPagar,
                         reservando || cargandoHoras || (reservaFecha && !horariosActivos.includes(reservaHora)) || horasOcupadas.includes(reservaHora)
                       )}
@@ -4530,12 +5330,26 @@ export default function BrotesApp() {
               );
             })()}
 
+            {esAnonimo ? (
+              <button
+                onClick={() => pedirCuenta("entrar")}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, background: C.card, border: "none", borderRadius: 18, padding: "14px 16px", marginBottom: 20, cursor: "pointer", textAlign: "left" }}
+              >
+                <span aria-hidden="true" style={{ fontSize: 22 }}>🎁</span>
+                <span style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, lineHeight: 1.4 }}>
+                  <strong>Invita a un amigo y gana $100.</strong> Entra a tu cuenta para obtener tu enlace.
+                </span>
+                <span aria-hidden="true" style={{ color: C.green, fontWeight: 700 }}>→</span>
+              </button>
+            ) : (
+              <div style={{ marginBottom: 20 }}>
+                <InvitaAmigo datos={referidos} />
+              </div>
+            )}
             <Tag>Tus reservaciones</Tag>
             <div style={{ marginTop: 10 }}>
               {cargandoReservaciones ? (
-                <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, textAlign: "center", padding: "16px 0" }}>
-                  Cargando...
-                </p>
+                <EsqueletoLista etiqueta="Cargando tus reservaciones" />
               ) : misReservaciones.length === 0 ? (
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.inkSoft, textAlign: "center", padding: "16px 0" }}>
                   Aún no tienes reservaciones.
@@ -4607,12 +5421,49 @@ export default function BrotesApp() {
             }}
           />}
 
+        {imagenCompartir && imagenCompartir !== "cargando" && (
+          <div
+            onClick={cerrarImagen}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Compartir tu planta"
+            style={{ position: "absolute", inset: 0, zIndex: 65, background: "rgba(20,16,8,0.7)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 14 }}
+          >
+            <img onClick={(e) => e.stopPropagation()} src={imagenCompartir.url} alt="Imagen de tu planta para compartir" style={{ maxWidth: "100%", maxHeight: "62%", borderRadius: 18, boxShadow: "0 20px 50px -20px rgba(0,0,0,0.6)" }} />
+            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 10, width: "100%", maxWidth: 360 }}>
+              {typeof navigator !== "undefined" && navigator.canShare?.({ files: [imagenCompartir.archivo] }) && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.share({ files: [imagenCompartir.archivo], text: imagenCompartir.texto });
+                    } catch {}
+                  }}
+                  style={{ flex: 1, padding: "13px 0", borderRadius: 14, border: "none", background: C.green, color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, cursor: "pointer" }}
+                >
+                  Compartir
+                </button>
+              )}
+              <a
+                href={imagenCompartir.url}
+                download={imagenCompartir.archivo.name}
+                style={{ flex: 1, padding: "13px 0", borderRadius: 14, background: C.cream, color: C.green, fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 15, textAlign: "center", textDecoration: "none" }}
+              >
+                Guardar imagen
+              </a>
+            </div>
+            <button onClick={cerrarImagen} style={{ background: "none", border: "none", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, cursor: "pointer", padding: 8 }}>
+              Cerrar
+            </button>
+          </div>
+        )}
+
         {reservaDetalle && (
           <DetalleReservacion
             key={reservaDetalle.id}
             r={reservaDetalle}
             fechasReservables={fechasReservables}
             diasLlenos={diasLlenos}
+            libresDias={disponibilidad?.libres}
             horariosActivos={horariosActivos}
             onCerrar={() => setReservaDetalle(null)}
             onActualizada={(nueva, mensaje) => {

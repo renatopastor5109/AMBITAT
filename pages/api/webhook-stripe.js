@@ -8,6 +8,7 @@ import { obtenerAgenda } from "../../lib/agendaServidor";
 import { cabeCitaPagada } from "../../lib/horariosOcupados";
 import { inicioCita } from "../../lib/politicaCancelacion";
 import { actualizarConExtras } from "../../lib/columnasOpcionales";
+import { alPagar } from "../../lib/referidosServidor";
 
 export const config = {
   api: {
@@ -87,7 +88,12 @@ async function marcarPagada(admin, stripe, session) {
     { pagado_en: ahora }
   );
   if (error) throw error;
-  if (!data || data.length === 0) {
+  if (data && data.length > 0) {
+    // Créditos usados y premio para quien lo invitó (si es su primer pago).
+    await alPagar(admin, reservacion);
+    return;
+  }
+  {
     // Cambió mientras tanto (p. ej. la canceló en ese momento): se revisa de nuevo.
     const { data: actual } = await admin.from("reservaciones").select("estado, reembolso_estado").eq("id", reservacionId).maybeSingle();
     if (actual?.estado === "cancelado" && !actual.reembolso_estado) await marcarConflicto("pago_tras_cancelar", "cancelado");

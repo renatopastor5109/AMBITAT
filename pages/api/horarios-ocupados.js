@@ -1,9 +1,11 @@
 // Disponibilidad para la Tienda (sin nombres ni direcciones de otros clientes).
-//  - Sin ?fecha: qué fechas se pueden reservar y cuáles ya están llenas.
+//  - Sin ?fecha: qué fechas se pueden reservar, cuántos lugares quedan en cada
+//    una, cuáles ya están llenas y los precios vigentes.
 //  - Con ?fecha=YYYY-MM-DD: además, qué horas de ese día ya no están libres
 //    (&excluir=<id> con sesión: sin contar esa cita propia, para cambiarla).
 import { clienteAdmin, obtenerUsuario } from "../../lib/usuarioServidor";
-import { obtenerAgenda } from "../../lib/agendaServidor";
+import { obtenerAgenda, obtenerPrecios } from "../../lib/agendaServidor";
+import { tamanosConPrecios } from "../../lib/servicio";
 import { disponibilidadGeneral, obtenerHorasOcupadas } from "../../lib/horariosOcupados";
 
 export default async function handler(req, res) {
@@ -17,9 +19,9 @@ export default async function handler(req, res) {
 
   try {
     const admin = clienteAdmin();
-    const agenda = await obtenerAgenda(admin);
-    const { fechas, diasLlenos } = await disponibilidadGeneral(admin, agenda);
-    const respuesta = { horarios: agenda.horarios, fechas, diasLlenos };
+    const [agenda, precios] = await Promise.all([obtenerAgenda(admin), obtenerPrecios(admin)]);
+    const { fechas, diasLlenos, libres } = await disponibilidadGeneral(admin, agenda);
+    const respuesta = { horarios: agenda.horarios, fechas, diasLlenos, libres, tamanos: tamanosConPrecios(precios) };
     if (fecha) {
       // Al cambiar su cita, la de la propia persona no cuenta como ocupada.
       let excluirId = null;

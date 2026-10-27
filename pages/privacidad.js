@@ -55,6 +55,7 @@ export default function Privacidad() {
         <ul>
           <li>Si activas los recordatorios: un identificador técnico de tu navegador para poder mandarte notificaciones.</li>
           <li>Los mensajes que nos mandes desde el buzón de sugerencias o por correo.</li>
+          <li>Cómo llegaste a la app: si fue por el código QR de un vivero aliado o por la invitación de un amigo (en ese caso, qué cuenta te invitó), para dar los descuentos y créditos de "Invita a un amigo" y saber qué alianzas funcionan.</li>
           <li>Un registro de cuántos análisis haces, para aplicar el límite diario y evitar abusos.</li>
           <li>Estadísticas anónimas de visitas (Vercel Analytics, que no usa cookies) y datos técnicos de conexión, como la dirección IP y el tipo de navegador, que nuestro proveedor de alojamiento registra por seguridad.</li>
         </ul>

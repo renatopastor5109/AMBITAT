@@ -1,7 +1,30 @@
 import Head from "next/head";
+import { useEffect } from "react";
 import { Analytics } from "@vercel/analytics/react";
 
 export default function App({ Component, pageProps }) {
+  // Chrome en Android avisa una sola vez, muy temprano, que la app se puede
+  // instalar. Se guarda aquí para que la app ofrezca el botón "Instalar" después.
+  useEffect(() => {
+    function instalable(e) {
+      e.preventDefault();
+      window.__ambitatInstalar = e;
+      window.dispatchEvent(new Event("ambitat-instalable"));
+    }
+    function instalada() {
+      window.__ambitatInstalar = null;
+      try {
+        localStorage.setItem("ambitat-instalada", "1");
+      } catch {}
+      window.dispatchEvent(new Event("ambitat-instalable"));
+    }
+    window.addEventListener("beforeinstallprompt", instalable);
+    window.addEventListener("appinstalled", instalada);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", instalable);
+      window.removeEventListener("appinstalled", instalada);
+    };
+  }, []);
   return (
     <>
       <Head>

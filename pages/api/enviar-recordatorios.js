@@ -1,6 +1,8 @@
 import webpush from "web-push";
 import { clienteAdmin } from "../../lib/usuarioServidor";
-import { diasParaRiego } from "../../lib/fechas";
+import { diasParaRiego, diaCDMX, diaSemana } from "../../lib/fechas";
+import { pronosticoCDMX, avisoClima } from "../../lib/clima";
+import { consejoDeTemporada } from "../../lib/temporadas";
 
 // Este endpoint NO lo llama la app — lo llama Vercel Cron una vez al día
 // (ver vercel.json: 14:00 UTC = 8:00 am en CDMX).
@@ -46,18 +48,46 @@ export default async function handler(req, res) {
       admin.from("plantas").select("*").order("id") // "*": funciona aunque falte alguna columna nueva
     );
 
-    // Agrupa por usuario los nombres de las plantas que necesitan agua hoy
+    // Por usuario: todas sus plantas y las que necesitan agua hoy.
     const porUsuario = {};
     for (const planta of plantas) {
+      const u = (porUsuario[planta.user_id] = porUsuario[planta.user_id] || { todas: [], sedientas: [] });
+      u.todas.push(planta.nombre_comun || "");
       const faltan = diasParaRiego(planta.dias_entre_riegos, planta.historial, planta.ultimo_riego);
-      if (faltan !== null && faltan <= 0) {
-        (porUsuario[planta.user_id] = porUsuario[planta.user_id] || []).push(planta.nombre_comun || "Una planta");
-      }
+      if (faltan !== null && faltan <= 0) u.sedientas.push(planta.nombre_comun || "Una planta");
     }
 
-    const userIds = Object.keys(porUsuario);
+    // Aviso del clima (frío, calor o lluvia fuerte) y, los lunes, el consejo de la temporada.
+    const aviso = avisoClima(await pronosticoCDMX());
+    const hoy = diaCDMX();
+    const esLunes = diaSemana(hoy) === 1;
+    const mes = Number(hoy.slice(5, 7));
+    const semana = Math.floor((Date.parse(hoy) / 86400000 + 3) / 7);
+
+    // Un solo aviso al día por persona: riego primero, y se le suma el clima.
+    function mensajePara(userId) {
+      const u = porUsuario[userId];
+      if (!u) return null;
+      const nombres = u.sedientas;
+      if (nombres.length) {
+        let body =
+          nombres.length === 1
+            ? `${nombres[0]} necesita agua hoy 💧`
+            : `${nombres.length} plantas necesitan agua hoy: ${nombres.slice(0, 3).join(", ")}${nombres.length > 3 ? "..." : ""}`;
+        if (aviso) body += ` · ${aviso.emoji} ${aviso.titulo}`;
+        return { title: "Ámbitat 🌿", body };
+      }
+      if (aviso) return { title: `${aviso.emoji} ${aviso.titulo}`, body: aviso.texto };
+      if (esLunes) {
+        const c = consejoDeTemporada(mes, u.todas, semana);
+        if (c) return { title: `${c.emoji} ${c.titulo}`, body: c.texto };
+      }
+      return null;
+    }
+
+    const userIds = Object.keys(porUsuario).filter((id) => mensajePara(id));
     if (userIds.length === 0) {
-      return res.status(200).json({ ok: true, notificados: 0, mensaje: "Ninguna planta necesita agua hoy" });
+      return res.status(200).json({ ok: true, notificados: 0, mensaje: "Hoy no hay nada que avisar" });
     }
 
     // Se consulta en grupos para no armar una URL gigante.
@@ -73,16 +103,10 @@ export default async function handler(req, res) {
     let expirados = 0;
 
     async function enviar(sub) {
-      const nombres = porUsuario[sub.user_id];
-      if (!nombres || nombres.length === 0) return;
-
-      const body =
-        nombres.length === 1
-          ? `${nombres[0]} necesita agua hoy 💧`
-          : `${nombres.length} plantas necesitan agua hoy: ${nombres.slice(0, 3).join(", ")}${nombres.length > 3 ? "..." : ""}`;
-
+      const mensaje = mensajePara(sub.user_id);
+      if (!mensaje) return;
       try {
-        await webpush.sendNotification(sub.subscription, JSON.stringify({ title: "Ámbitat 🌿", body, url: "/" }));
+        await webpush.sendNotification(sub.subscription, JSON.stringify({ ...mensaje, url: "/" }));
         enviados++;
       } catch (err) {
         // 404/410 = la suscripción ya no es válida (desinstaló, quitó el permiso, etc.)

@@ -4,7 +4,7 @@
 import Head from "next/head";
 import { useEffect, useMemo, useState } from "react";
 import { diaCDMX, sumarDias, diaSemana } from "../lib/fechas";
-import { tamanoPorClave } from "../lib/servicio";
+import { tamanoPorClave, TAMANOS, PRECIO_MINIMO, PRECIO_MAXIMO, formatoPrecio } from "../lib/servicio";
 import { AGENDA_INICIAL, HORARIOS_POSIBLES, NOMBRES_DIAS_SEMANA, normalizarAgenda } from "../lib/agenda";
 
 const C = {
@@ -38,6 +38,25 @@ const ESTADOS = {
 };
 
 const CLAVE_SESION = "ambitat-admin-pw";
+
+// Siluetas grises mientras carga una sección.
+function EsqueletoTarjetas({ n = 2 }) {
+  return (
+    <div role="status" aria-label="Cargando">
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12 }}>
+          <div className="admin-esq" style={{ width: "40%", height: 15 }} />
+          <div className="admin-esq" style={{ width: "85%", height: 11, marginTop: 12 }} />
+          <div className="admin-esq" style={{ width: "65%", height: 11, marginTop: 8 }} />
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <div className="admin-esq" style={{ flex: 1, height: 38, borderRadius: 12 }} />
+            <div className="admin-esq" style={{ flex: 1, height: 38, borderRadius: 12 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function leerSesion() {
   try {
@@ -86,6 +105,7 @@ export default function Admin() {
   const [vista, setVista] = useState("calendario"); // calendario | proximas | historial | agenda | ajustes
   const [agenda, setAgenda] = useState(null);
   const [agendaError, setAgendaError] = useState(null);
+  const [precios, setPrecios] = useState(null);
   const [verPendientes, setVerPendientes] = useState(false);
   const [actualizando, setActualizando] = useState(null);
 
@@ -113,6 +133,12 @@ export default function Admin() {
         })
         // Si no se pudo leer, NO se usan los valores de fábrica (para no guardarlos encima por error).
         .catch((e) => setAgendaError(e.message || "No se pudo leer tu agenda. Toca Actualizar."));
+      fetch("/api/admin/precios", { headers: { "x-admin-password": pw } })
+        .then(async (r) => {
+          const d = await r.json();
+          if (r.ok) setPrecios(d.precios);
+        })
+        .catch(() => {});
     } catch (err) {
       setError(err.message);
       if (!reservaciones) {
@@ -153,6 +179,23 @@ export default function Admin() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo guardar");
       setAgenda(data.agenda);
+      return true;
+    } catch (err) {
+      alert(err.message);
+      return false;
+    }
+  }
+
+  async function guardarPrecios(nuevos) {
+    try {
+      const res = await fetch("/api/admin/precios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ precios: nuevos }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo guardar");
+      setPrecios(data.precios);
       return true;
     } catch (err) {
       alert(err.message);
@@ -226,6 +269,10 @@ export default function Admin() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         body { margin: 0; background: ${C.bg}; }
+        .admin-pestanas::-webkit-scrollbar { display: none; }
+        .admin-esq { background: linear-gradient(90deg, #EFE6CC 25%, #f7f1e1 50%, #EFE6CC 75%); background-size: 200% 100%; animation: adminEsq 1.3s ease-in-out infinite; border-radius: 6px; }
+        @keyframes adminEsq { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+        @media (prefers-reduced-motion: reduce) { .admin-esq { animation: none; } }
         * { box-sizing: border-box; }
         a { -webkit-tap-highlight-color: transparent; }
       `}</style>
@@ -298,18 +345,19 @@ export default function Admin() {
               <Stat valor={`$${(resumen.cobrado / 100).toLocaleString("es-MX")}`} label="Cobrado en total" />
             </div>
 
-            <div style={{ display: "flex", background: C.card, borderRadius: 14, padding: 4, marginBottom: 12 }}>
+            <div className="admin-pestanas" style={{ display: "flex", background: C.card, borderRadius: 14, padding: 4, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
               {[
                 ["calendario", "Calendario"],
                 ["proximas", "Próximas"],
                 ["historial", "Historial"],
-                ["agenda", "Agenda"],
+                ["agenda", "Servicio"],
+                ["crecer", "Crecer"],
                 ["ajustes", "Ajustes"],
               ].map(([k, l]) => (
                 <button
                   key={k}
                   onClick={() => setVista(k)}
-                  style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", border: "none", borderRadius: 11, padding: "10px 2px", fontFamily: F, fontWeight: 700, fontSize: "clamp(11px, 3.2vw, 13.5px)", cursor: "pointer", background: vista === k ? C.green : "transparent", color: vista === k ? "#fff" : C.inkSoft }}
+                  style={{ flex: "1 0 auto", whiteSpace: "nowrap", border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: F, fontWeight: 700, fontSize: 13, cursor: "pointer", background: vista === k ? C.green : "transparent", color: vista === k ? "#fff" : C.inkSoft }}
                 >
                   {l}
                 </button>
@@ -323,12 +371,18 @@ export default function Admin() {
               </label>
             )}
 
-            {vista === "agenda" ? (
-              agenda ? (
-                <AgendaConfig agenda={agenda} onGuardar={guardarAgenda} />
-              ) : (
-                <p style={{ textAlign: "center", color: agendaError ? C.red : C.inkSoft, fontSize: 14 }}>{agendaError || "Cargando..."}</p>
-              )
+            {vista === "crecer" ? (
+              <Crecer password={password} />
+            ) : vista === "agenda" ? (
+              <>
+                {precios && <PreciosConfig precios={precios} onGuardar={guardarPrecios} />}
+                <ZonasConfig password={password} />
+                {agenda ? (
+                  <AgendaConfig agenda={agenda} onGuardar={guardarAgenda} />
+                ) : (
+                  agendaError ? <p style={{ textAlign: "center", color: C.red, fontSize: 14 }}>{agendaError}</p> : <EsqueletoTarjetas />
+                )}
+              </>
             ) : vista === "ajustes" ? (
               <Ajustes password={password} />
             ) : vista === "calendario" ? (
@@ -429,7 +483,7 @@ function Ajustes({ password }) {
   );
 
   if (error) return <p style={{ color: C.red, fontSize: 13.5 }}>{error}</p>;
-  if (!datos) return <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 14, padding: "30px 0" }}>Revisando...</p>;
+  if (!datos) return <EsqueletoTarjetas n={3} />;
   const a = datos.auth;
 
   return (
@@ -482,6 +536,300 @@ function Ajustes({ password }) {
         ))}
       </div>
       <button onClick={revisar} style={{ ...botonChico, width: "100%", padding: "12px 0" }}>Volver a revisar</button>
+    </div>
+  );
+}
+
+// ---------- Crecer: tarjetas en viveros (QR) e invitaciones ----------
+function Crecer({ password }) {
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState(null);
+  const [nombre, setNombre] = useState("");
+  const [zona, setZona] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [abierto, setAbierto] = useState(null); // slug con el QR abierto
+  const origen = typeof window !== "undefined" ? window.location.origin : "https://ambitat.vercel.app";
+
+  async function cargar() {
+    setError(null);
+    try {
+      const r = await fetch("/api/admin/crecimiento", { headers: { "x-admin-password": password } });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setDatos(d);
+    } catch (e) {
+      setError(e.message || "No se pudo cargar.");
+    }
+  }
+  useEffect(() => {
+    cargar();
+  }, []);
+
+  async function enviar(cuerpo) {
+    setGuardando(true);
+    try {
+      const r = await fetch("/api/admin/crecimiento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify(cuerpo),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      await cargar();
+      return d;
+    } catch (e) {
+      alert(e.message || "No se pudo guardar.");
+      return null;
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  const tarjeta = { background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 12 };
+  const pesos = (c) => `$${Math.round((c || 0) / 100).toLocaleString("es-MX")}`;
+  const Numero = ({ v, l }) => (
+    <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+      <p style={{ margin: 0, fontWeight: 800, fontSize: 18, color: C.ink }}>{v}</p>
+      <p style={{ margin: 0, fontSize: 11, color: C.inkSoft, lineHeight: 1.25 }}>{l}</p>
+    </div>
+  );
+
+  if (error) return <p style={{ color: C.red, fontSize: 14, textAlign: "center" }}>{error}</p>;
+  if (!datos) return <EsqueletoTarjetas n={3} />;
+
+  return (
+    <div>
+      <div style={tarjeta}>
+        <p style={{ fontWeight: 800, fontSize: 15, color: C.ink, margin: "0 0 4px" }}>Tarjetas en viveros</p>
+        <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 }}>
+          Da de alta cada vivero o tienda donde dejes tarjetas. Cada uno tiene su propio QR, así sabes cuánta gente llega de ahí y cuántos terminan contratándote.
+        </p>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const d = await enviar({ nombre, zona });
+            if (d?.slug) {
+              setNombre("");
+              setZona("");
+              setAbierto(d.slug);
+            }
+          }}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        >
+          <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre (ej. Vivero Coyoacán)" style={campoAdmin} />
+          <input value={zona} onChange={(e) => setZona(e.target.value)} placeholder="Zona (opcional, ej. Coyoacán)" style={campoAdmin} />
+          <button type="submit" disabled={guardando || !nombre.trim()} style={{ ...botonChico, background: nombre.trim() ? C.green : C.cardLine, color: nombre.trim() ? "#fff" : C.inkSoft, padding: "12px 0" }}>
+            {guardando ? "Guardando..." : "Agregar vivero"}
+          </button>
+        </form>
+      </div>
+
+      {datos.viveros.length === 0 ? (
+        <p style={{ textAlign: "center", color: C.inkSoft, fontSize: 13.5, margin: "8px 0 16px" }}>Todavía no das de alta ningún vivero.</p>
+      ) : (
+        datos.viveros.map((v) => {
+          const link = `${origen}/v/${v.slug}`;
+          const qr = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=12&data=${encodeURIComponent(link)}`;
+          return (
+            <div key={v.slug} style={{ ...tarjeta, opacity: v.activo ? 1 : 0.6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: 15, color: C.ink }}>{v.nombre}</p>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: C.inkSoft, wordBreak: "break-all" }}>
+                    {v.zona ? `${v.zona} · ` : ""}
+                    {link.replace(/^https?:\/\//, "")}
+                  </p>
+                </div>
+                <button onClick={() => enviar({ slug: v.slug, activo: !v.activo })} style={{ ...botonChico, background: C.tileBg, flexShrink: 0 }}>
+                  {v.activo ? "Pausar" : "Reactivar"}
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginTop: 12, padding: "10px 0", borderTop: "1px solid " + C.cardLine, borderBottom: "1px solid " + C.cardLine }}>
+                <Numero v={v.personas} l="llegaron" />
+                <Numero v={v.conPlantas} l="registraron planta" />
+                <Numero v={v.clientes} l="te contrataron" />
+                <Numero v={pesos(v.ingresos)} l="ingresos" />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={() => setAbierto(abierto === v.slug ? null : v.slug)} style={{ ...botonChico, flex: 1, background: C.green, color: "#fff", padding: "10px 0" }}>
+                  {abierto === v.slug ? "Ocultar QR" : "Ver QR"}
+                </button>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(link).then(() => alert("Enlace copiado"))}
+                  style={{ ...botonChico, flex: 1, background: C.tileBg, padding: "10px 0" }}
+                >
+                  Copiar enlace
+                </button>
+              </div>
+              {abierto === v.slug && (
+                <div style={{ textAlign: "center", marginTop: 12 }}>
+                  <img src={qr} alt={`Código QR de ${v.nombre}`} style={{ width: "100%", maxWidth: 260, background: "#fff", borderRadius: 14 }} />
+                  <p style={{ fontSize: 12, color: C.inkSoft, margin: "6px 0 0" }}>
+                    Para imprimirlo:{" "}
+                    <a href={qr} target="_blank" rel="noopener" style={{ color: C.green, fontWeight: 700 }}>
+                      abrir el QR en grande
+                    </a>{" "}
+                    y guardarlo como imagen.
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      <div style={tarjeta}>
+        <p style={{ fontWeight: 800, fontSize: 15, color: C.ink, margin: "0 0 4px" }}>Invita a un amigo</p>
+        <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45 }}>
+          El amigo recibe $100 de descuento en su primer mantenimiento y quien lo invitó gana $100 de crédito cuando el amigo paga.
+        </p>
+        <div style={{ display: "flex", gap: 6, padding: "10px 0", borderTop: "1px solid " + C.cardLine }}>
+          <Numero v={datos.invitaciones.personas} l="amigos invitados" />
+          <Numero v={datos.invitaciones.clientes} l="te contrataron" />
+          <Numero v={pesos(datos.invitaciones.ingresos)} l="ingresos" />
+          <Numero v={datos.invitaciones.creditosDados} l="créditos dados" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const campoAdmin = { width: "100%", border: "1px solid #e2d7b8", borderRadius: 12, padding: "11px 12px", fontFamily: "'Inter', sans-serif", fontSize: 16, color: "#221C13", background: "#EFE6CC" };
+
+// ---------- Zonas donde das servicio (se ven en /conoce) ----------
+function ZonasConfig({ password }) {
+  const [zonas, setZonas] = useState(null);
+  const [borrador, setBorrador] = useState("");
+  const [error, setError] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [listo, setListo] = useState(false);
+  useEffect(() => {
+    fetch("/api/admin/zonas", { headers: { "x-admin-password": password } })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok) throw new Error(d.error || "No se pudieron cargar las zonas.");
+        setZonas(d.zonas);
+        setBorrador(d.zonas.join("\n"));
+      })
+      .catch((e) => setError(e.message));
+  }, [password]);
+  const lista = borrador.split(/\n|,/).map((z) => z.trim()).filter(Boolean);
+  const hayCambios = zonas && lista.join("|") !== zonas.join("|");
+  async function guardar() {
+    setGuardando(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/admin/zonas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify({ zonas: lista }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "No se pudo guardar.");
+      setZonas(d.zonas);
+      setBorrador(d.zonas.join("\n"));
+      setListo(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+  return (
+    <div style={{ background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 12 }}>
+      <p style={{ fontWeight: 800, fontSize: 15, color: C.ink, margin: "0 0 4px" }}>Zonas donde das servicio</p>
+      <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 10px", lineHeight: 1.45 }}>
+        Una por renglón (alcaldías o colonias). Aparecen en tu página de presentación{" "}
+        <a href="/conoce" target="_blank" rel="noopener" style={{ color: C.green, fontWeight: 700 }}>/conoce</a>.
+      </p>
+      {zonas === null && !error ? (
+        <div className="admin-esq" style={{ height: 96, borderRadius: 12 }} />
+      ) : (
+        <textarea
+          value={borrador}
+          onChange={(e) => {
+            setListo(false);
+            setBorrador(e.target.value);
+          }}
+          rows={5}
+          aria-label="Zonas donde das servicio, una por renglón"
+          placeholder={"Coyoacán\nBenito Juárez\nCuauhtémoc"}
+          style={{ ...campoAdmin, resize: "vertical", lineHeight: 1.45 }}
+        />
+      )}
+      {error && <p style={{ color: C.red, fontSize: 13, margin: "8px 0 0" }}>{error}</p>}
+      <button
+        onClick={guardar}
+        disabled={guardando || !hayCambios || lista.length === 0}
+        style={{ marginTop: 10, width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: hayCambios && lista.length ? C.green : C.cardLine, color: hayCambios && lista.length ? "#fff" : C.inkSoft, fontFamily: F, fontWeight: 800, fontSize: 15, cursor: hayCambios ? "pointer" : "default" }}
+      >
+        {guardando ? "Guardando..." : hayCambios ? `Guardar ${lista.length} ${lista.length === 1 ? "zona" : "zonas"}` : listo ? "Guardado ✓" : "Sin cambios"}
+      </button>
+    </div>
+  );
+}
+
+// ---------- Precios del mantenimiento ----------
+function PreciosConfig({ precios, onGuardar }) {
+  const aPesos = (p) => Object.fromEntries(TAMANOS.map((t) => [t.key, String(Math.round((p[t.key] || t.precio) / 100))]));
+  const [borrador, setBorrador] = useState(() => aPesos(precios));
+  const [guardando, setGuardando] = useState(false);
+  const [listo, setListo] = useState(false);
+  useEffect(() => setBorrador(aPesos(precios)), [precios]);
+
+  const errores = {};
+  TAMANOS.forEach((t) => {
+    const v = Number(borrador[t.key]);
+    if (!/^\d+$/.test(borrador[t.key] || "") || v * 100 < PRECIO_MINIMO || v * 100 > PRECIO_MAXIMO) {
+      errores[t.key] = `Entre ${formatoPrecio(PRECIO_MINIMO)} y ${formatoPrecio(PRECIO_MAXIMO)}`;
+    }
+  });
+  const hayErrores = Object.keys(errores).length > 0;
+  const hayCambios = TAMANOS.some((t) => Number(borrador[t.key]) * 100 !== precios[t.key]);
+
+  async function guardar() {
+    if (hayErrores) return;
+    if (!window.confirm("¿Guardar los nuevos precios? Se aplican a las reservaciones nuevas desde este momento (las ya pagadas no cambian).")) return;
+    setGuardando(true);
+    const ok = await onGuardar(Object.fromEntries(TAMANOS.map((t) => [t.key, Number(borrador[t.key]) * 100])));
+    setGuardando(false);
+    if (ok) setListo(true);
+  }
+
+  return (
+    <div style={{ background: C.card, borderRadius: 18, padding: "16px 16px", marginBottom: 12 }}>
+      <p style={{ fontWeight: 800, fontSize: 15, color: C.ink, margin: "0 0 4px" }}>Precios del mantenimiento</p>
+      <p style={{ fontSize: 12.5, color: C.inkSoft, margin: "0 0 12px", lineHeight: 1.45 }}>
+        En pesos, con impuestos incluidos. Se actualizan solos en la Tienda y en los Términos.
+      </p>
+      {TAMANOS.map((t) => (
+        <label key={t.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid " + C.cardLine }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontWeight: 700, fontSize: 14, color: C.ink }}>Jardín {t.nombre.toLowerCase()}</span>
+            <span style={{ display: "block", fontSize: 12, color: errores[t.key] ? C.red : C.inkSoft }}>{errores[t.key] || t.incluye[0]}</span>
+          </span>
+          <span style={{ display: "flex", alignItems: "center", background: C.tileBg, border: "1px solid " + (errores[t.key] ? C.red : C.cardLine), borderRadius: 12, padding: "0 10px" }}>
+            <span style={{ color: C.inkSoft, fontWeight: 700 }}>$</span>
+            <input
+              inputMode="numeric"
+              value={borrador[t.key]}
+              onChange={(e) => {
+                setListo(false);
+                setBorrador((b) => ({ ...b, [t.key]: e.target.value.replace(/\D/g, "").slice(0, 6) }));
+              }}
+              aria-label={`Precio jardín ${t.nombre.toLowerCase()} en pesos`}
+              style={{ width: 80, border: "none", background: "transparent", padding: "10px 4px", fontFamily: F, fontSize: 16, fontWeight: 700, color: C.ink, textAlign: "right" }}
+            />
+          </span>
+        </label>
+      ))}
+      <button
+        onClick={guardar}
+        disabled={guardando || !hayCambios || hayErrores}
+        style={{ marginTop: 12, width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: hayCambios && !hayErrores ? C.green : C.cardLine, color: hayCambios && !hayErrores ? "#fff" : C.inkSoft, fontFamily: F, fontWeight: 800, fontSize: 15, cursor: hayCambios && !hayErrores ? "pointer" : "default" }}
+      >
+        {guardando ? "Guardando..." : hayCambios ? "Guardar precios" : listo ? "Guardado ✓" : "Sin cambios"}
+      </button>
     </div>
   );
 }

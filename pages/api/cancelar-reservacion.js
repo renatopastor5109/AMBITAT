@@ -5,6 +5,7 @@ import Stripe from "stripe";
 import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
 import { politicaCancelacion } from "../../lib/politicaCancelacion";
 import { actualizarConExtras } from "../../lib/columnasOpcionales";
+import { devolverCreditos } from "../../lib/referidosServidor";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
@@ -69,6 +70,8 @@ export default async function handler(req, res) {
     );
     if (claimError) throw claimError;
     if (!tomada) return res.status(409).json({ error: "Esta reservación cambió. Recarga e intenta de nuevo." });
+    // Los créditos de "Invita a un amigo" que usó vuelven a estar disponibles.
+    await devolverCreditos(admin, r);
 
     let reembolsoEstado = "sin_reembolso";
     if (politica.monto > 0) {

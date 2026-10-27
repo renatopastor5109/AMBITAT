@@ -1,13 +1,12 @@
-import { SITE_URL } from "../components/Seo";
-
-// Genera /robots.txt: qué puede revisar Google y dónde está el sitemap.
-export async function getServerSideProps({ res }) {
-  res.setHeader("Content-Type", "text/plain");
-  res.write(`User-agent: *\nAllow: /\nDisallow: /api/\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+// /robots.txt: qué pueden leer los buscadores (todo menos el panel y la API).
+export async function getServerSideProps({ req, res }) {
+  const sitio = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, s-maxage=86400");
+  res.write(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /r/\nDisallow: /v/\n\nSitemap: ${sitio}/sitemap.xml\n`);
   res.end();
   return { props: {} };
 }
-
 export default function Robots() {
   return null;
 }

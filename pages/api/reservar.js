@@ -1,16 +1,18 @@
 // Crea una reservación de mantenimiento Y su sesión de pago en Stripe.
 //
 // Todo pasa en el SERVIDOR a propósito: aquí se decide el precio, se revisa
-// que la fecha y hora estén en tu agenda (/admin → Agenda) y que haya lugar. Antes
+// que la fecha y hora estén en tu agenda (/admin → Servicio) y que haya lugar. Antes
 // la app creaba la reservación directo en la base de datos, y alguien que
 // supiera usar la consola del navegador podía ponerle otro precio o marcarla
 // como pagada.
 import Stripe from "stripe";
 import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
 import { obtenerHorasOcupadas, horaGanadaPorOtra, apartaHorario } from "../../lib/horariosOcupados";
-import { obtenerAgenda } from "../../lib/agendaServidor";
+import { obtenerAgenda, obtenerPrecios } from "../../lib/agendaServidor";
+import { calcularDescuento } from "../../lib/referidosServidor";
+import { actualizarConExtras } from "../../lib/columnasOpcionales";
 import { diaPermitido } from "../../lib/agenda";
-import { tamanoPorClave, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
+import { tamanoPorClave, formatoPrecio, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
 import { diaCDMX, diasEntre, esFechaValida } from "../../lib/fechas";
 
 const DIAS_MINIMOS_OXXO = 3;
@@ -44,9 +46,9 @@ export default async function handler(req, res) {
   const notas = texto(body.notas, 500) || null;
   const fecha = body.fecha;
   const hora = body.hora;
-  const tamano = tamanoPorClave(body.tamano);
+  const tamanoBase = tamanoPorClave(body.tamano);
 
-  if (!tamano) return res.status(400).json({ error: "Elige el tamaño de tu jardín." });
+  if (!tamanoBase) return res.status(400).json({ error: "Elige el tamaño de tu jardín." });
   if (!nombre || !direccion) return res.status(400).json({ error: "Falta tu nombre o la dirección." });
   if (telefono.replace(/\D/g, "").length < 8) return res.status(400).json({ error: "Revisa tu número de teléfono." });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return res.status(400).json({ error: "Revisa tu correo." });
@@ -55,7 +57,16 @@ export default async function handler(req, res) {
   const admin = clienteAdmin();
 
   try {
-    const agenda = await obtenerAgenda(admin);
+    const [agenda, precios] = await Promise.all([obtenerAgenda(admin), obtenerPrecios(admin)]);
+    // El precio vigente lo pone el servidor (lo editas en /admin → Servicio).
+    const tamano = { ...tamanoBase, precio: precios[tamanoBase.key] };
+    // Si cambiaste el precio mientras la persona reservaba, se le avisa antes de cobrar.
+    if (Number.isFinite(body.precioVisto) && body.precioVisto !== tamano.precio) {
+      return res.status(409).json({
+        error: `El precio de este servicio cambió a ${formatoPrecio(tamano.precio)}. Revísalo y vuelve a tocar "Reservar y pagar".`,
+        precioNuevo: tamano.precio,
+      });
+    }
     if (!diaPermitido(agenda, fecha)) return res.status(400).json({ error: "Ese día no hay visitas. Elige otra fecha." });
     const diasFaltan = diasEntre(diaCDMX(), fecha);
     // Siempre con anticipación (nunca se cobra una hora de hoy que ya pasó).
@@ -84,6 +95,10 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: "Ese horario se acaba de ocupar. Elige otra hora." });
     }
 
+    // Descuentos de "Invita a un amigo" (bienvenida y créditos ganados).
+    const descuento = await calcularDescuento(admin, usuario.id, tamano.precio);
+    const total = tamano.precio - descuento.total;
+
     // ---------- Guarda la reservación (el precio lo pone el servidor) ----------
     const fila = {
       user_id: usuario.id,
@@ -95,10 +110,15 @@ export default async function handler(req, res) {
       direccion,
       notas,
       tamano: tamano.key,
-      precio_centavos: tamano.precio,
+      precio_centavos: total, // lo que de verdad se cobra (con descuento)
       estado: "pendiente_pago",
     };
-    const { data: reservacion, error: insertError } = await admin.from("reservaciones").insert(fila).select().single();
+    const extrasDescuento = descuento.total > 0 ? { descuento_centavos: descuento.total, creditos_usados: descuento.creditos } : {};
+    const { data: reservacion, error: insertError } = await actualizarConExtras(
+      (campos) => admin.from("reservaciones").insert(campos).select().single(),
+      fila,
+      extrasDescuento
+    );
 
     if (insertError || !reservacion) {
       console.error("Error creando reservación:", insertError);
@@ -136,10 +156,12 @@ export default async function handler(req, res) {
           {
             price_data: {
               currency: "mxn",
-              unit_amount: tamano.precio,
+              unit_amount: reservacion.precio_centavos,
               product_data: {
                 name: `Mantenimiento de plantas · Jardín ${tamano.nombre.toLowerCase()} — Ámbitat`,
-                description: `Visita el ${fecha} a las ${hora}`,
+                description:
+                  `Visita el ${fecha} a las ${hora}` +
+                  (reservacion.descuento_centavos ? ` · Incluye ${formatoPrecio(reservacion.descuento_centavos)} de descuento por invitación` : ""),
               },
             },
             quantity: 1,

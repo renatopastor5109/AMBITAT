@@ -7,7 +7,7 @@ import { politicaCancelacion, puedeCambiarFecha, horasParaLaCita } from "../lib/
 import { tipsDelDia } from "../lib/tips";
 import { consejoDeTemporada } from "../lib/temporadas";
 
-// ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
+// ---- Design token
 const C = {
   card: "#F5EFDD",          // superficie de tarjetas — crema
   cardLine: "#e2d7b8",      // separador sutil entre filas

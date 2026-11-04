@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   const admin = clienteAdmin();
   try {
     const codigo = await obtenerCodigo(admin, usuario.id);
-    const origen = process.env.NEXT_PUBLIC_SITE_URL || "https://ambitat.vercel.app";
+    const origen = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
     const [{ count: invitados }, { data: ganados }] = await Promise.all([
       admin.from("atribucion").select("user_id", { count: "exact", head: true }).eq("referido_por", usuario.id),
       admin.from("creditos").select("monto_centavos").eq("user_id", usuario.id).not("referido_id", "is", null),

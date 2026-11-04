@@ -140,7 +140,8 @@ export default async function handler(req, res) {
     // ---------- Sesión de pago en Stripe ----------
     try {
       const stripe = new Stripe(stripeKey);
-      const origin = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
+      // Regresa al mismo dominio donde empezó (la sesión vive en ese dominio).
+      const origin = req.headers.host ? `https://${req.headers.host}` : process.env.NEXT_PUBLIC_SITE_URL;
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         // OXXO solo si la visita es en 3 días o más: la ficha dura 2 días y

@@ -7,7 +7,7 @@ import { politicaCancelacion, puedeCambiarFecha, horasParaLaCita } from "../lib/
 import { tipsDelDia } from "../lib/tips";
 import { consejoDeTemporada } from "../lib/temporadas";
 
-// ---- Design token
+// ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
   card: "#F5EFDD",          // superficie de tarjetas — crema
   cardLine: "#e2d7b8",      // separador sutil entre filas
@@ -1566,7 +1566,7 @@ const PASOS_INSTALAR = {
   ],
   "ios-otro": [
     ["⬆️", "Toca el botón Compartir", "Está junto a la barra de direcciones (o en el menú ⋯)."],
-    ["➕", "Elige “Agregar a inicio”", "Si no aparece, abre ambitat.vercel.app en Safari y hazlo desde ahí."],
+    ["➕", "Elige “Agregar a inicio”", "Si no aparece, abre esta misma página en Safari y hazlo desde ahí."],
     ["✅", "Ábrela desde su ícono", "En iPhone, los recordatorios solo llegan si la abres desde la pantalla de inicio."],
   ],
   android: [
@@ -2782,14 +2782,14 @@ export default function BrotesApp() {
       const { crearImagenPlanta } = await import("../lib/imagenPlanta");
       // Si tiene cuenta, la imagen lleva su enlace de invitación.
       const datosRef = referidos || (!esAnonimo ? await cargarReferidos() : null);
-      const enlace = (datosRef?.link || "https://ambitat.vercel.app").replace(/^https?:\/\//, "");
+      const enlace = (datosRef?.link || window.location.origin).replace(/^https?:\/\//, "");
       const estadoTexto = (ESTADO_STYLES[plant.estado_general] || ESTADO_STYLES.regular).label;
       const blob = await crearImagenPlanta(plant, { enlace, estadoTexto });
       const nombre = `${(plant.nombre_comun || "mi-planta").toLowerCase().replace(/[^a-z0-9]+/gi, "-")}-ambitat.png`;
       setImagenCompartir({
         url: URL.createObjectURL(blob),
         archivo: new File([blob], nombre, { type: "image/png" }),
-        texto: `Mira mi ${plant.nombre_comun || "planta"} 🌿 La cuido con Ámbitat: ${datosRef?.link || "https://ambitat.vercel.app"}`,
+        texto: `Mira mi ${plant.nombre_comun || "planta"} 🌿 La cuido con Ámbitat: ${datosRef?.link || window.location.origin}`,
       });
     } catch (err) {
       console.error("No se pudo crear la imagen:", err);

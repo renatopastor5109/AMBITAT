@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const origen = process.env.NEXT_PUBLIC_SITE_URL || "https://ambitat.vercel.app";
+  const origen = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
   const { error } = await supabase.auth.signInWithOtp({
     email: correo,
     options: { shouldCreateUser: true, emailRedirectTo: origen },

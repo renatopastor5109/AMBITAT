@@ -39,7 +39,7 @@ Para dejarlo configurado, sigue `GUIA-CUENTAS.md` y revisa `/admin → Ajustes`.
 | `CRON_SECRET` | Obligatoria para que funcionen los recordatorios |
 | `ADMIN_PASSWORD` | Panel `/admin` (usa una contraseña larga) |
 | `GOOGLE_MAPS_API_KEY` | Opcional: fotos de los viveros |
-| `NEXT_PUBLIC_SITE_URL` | Opcional: la dirección de la app si cambias de dominio (por defecto `https://ambitat.vercel.app`) |
+| `NEXT_PUBLIC_SITE_URL` | La dirección principal de la app, sin diagonal al final (p. ej. `https://ambitat.mx`). Se usa en los enlaces de invitación, el pago con Stripe, los correos y Google |
 
 Después de agregar o cambiar una variable hay que hacer **Redeploy**.
 

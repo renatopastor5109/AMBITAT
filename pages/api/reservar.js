@@ -58,6 +58,9 @@ export default async function handler(req, res) {
 
   try {
     const [agenda, precios] = await Promise.all([obtenerAgenda(admin), obtenerPrecios(admin)]);
+    if (agenda.pausa.activa) {
+      return res.status(409).json({ error: agenda.pausa.mensaje || "Por ahora no estamos tomando reservaciones. Vuelve a intentar pronto.", pausa: true });
+    }
     // El precio vigente lo pone el servidor (lo editas en /admin → Servicio).
     const tamano = { ...tamanoBase, precio: precios[tamanoBase.key] };
     // Si cambiaste el precio mientras la persona reservaba, se le avisa antes de cobrar.

@@ -2,6 +2,28 @@
 // cuentas (Google, Apple, correo...) y qué variables de Vercel faltan.
 // Solo dice "sí / no": nunca regresa el valor de ninguna clave.
 import { esAdmin } from "../../../lib/adminAuth";
+import { clienteAdmin } from "../../../lib/usuarioServidor";
+
+// Para cada archivo SQL, una columna o tabla que ese archivo crea. Si la
+// consulta funciona, ese archivo ya se corrió.
+const REVISIONES = [
+  ["supabase-revision-2.sql", "Riego sin foto, fichas y cancelaciones", "plantas", "ultimo_riego"],
+  ["supabase-revision-3.sql", "Agenda y precios desde el panel", "configuracion", "clave"],
+  ["supabase-revision-4.sql", "Viveros con QR e Invita a un amigo", "aliados", "slug"],
+  ["supabase-revision-5.sql", "Espacios (cuartos)", "plantas", "espacio"],
+  ["supabase-revision-6.sql", "Notas de clientes, buzón y notificaciones a todos", "notas_clientes", "user_id"],
+];
+
+async function revisarBaseDeDatos() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const admin = clienteAdmin();
+  return Promise.all(
+    REVISIONES.map(async ([archivo, para, tabla, columna]) => {
+      const { error } = await admin.from(tabla).select(columna).limit(1);
+      return { archivo, para, lista: !error };
+    })
+  );
+}
 
 const VARIABLES = [
   ["ANTHROPIC_API_KEY", "Análisis de plantas con IA"],
@@ -49,5 +71,12 @@ export default async function handler(req, res) {
     authError = "Faltan las variables de Supabase";
   }
 
-  return res.status(200).json({ variables, auth, authError, callback: url ? `${url}/auth/v1/callback` : null });
+  let baseDeDatos = null;
+  try {
+    baseDeDatos = await revisarBaseDeDatos();
+  } catch (err) {
+    console.error("No se pudo revisar la base de datos:", err.message);
+  }
+
+  return res.status(200).json({ variables, auth, authError, baseDeDatos, callback: url ? `${url}/auth/v1/callback` : null });
 }

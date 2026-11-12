@@ -2,6 +2,7 @@
 // usuarios). Solo responde si la contraseña de administrador es correcta.
 import { clienteAdmin } from "../../../lib/usuarioServidor";
 import { esAdmin } from "../../../lib/adminAuth";
+import { todasLasFilas } from "../../../lib/adminDatos";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -12,14 +13,12 @@ export default async function handler(req, res) {
   }
 
   const admin = clienteAdmin();
-  const { data, error } = await admin
-    .from("reservaciones")
-    .select("*") // "*" para que funcione aunque todavía no exista alguna columna nueva
-    .order("fecha", { ascending: true });
-
-  if (error) {
+  try {
+    // "*" para que funcione aunque todavía no exista alguna columna nueva; de 1000 en 1000.
+    const data = await todasLasFilas(() => admin.from("reservaciones").select("*").order("fecha", { ascending: true }).order("id"));
+    return res.status(200).json({ reservaciones: data });
+  } catch (error) {
     console.error("Error leyendo reservaciones:", error);
     return res.status(500).json({ error: "No se pudieron leer las citas." });
   }
-  return res.status(200).json({ reservaciones: data || [] });
 }

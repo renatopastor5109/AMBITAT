@@ -27,7 +27,11 @@ self.addEventListener("notificationclick", function (event) {
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (ventanas) {
       for (const v of ventanas) {
-        if ("focus" in v) return v.focus();
+        if ("focus" in v) {
+          // Si el aviso lleva a una sección (ej. /?ir=tienda), la abre ahí.
+          if (url !== "/" && "navigate" in v) return v.navigate(url).then((w) => (w || v).focus());
+          return v.focus();
+        }
       }
       return clients.openWindow(url);
     })

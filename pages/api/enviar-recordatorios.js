@@ -3,6 +3,7 @@ import { clienteAdmin } from "../../lib/usuarioServidor";
 import { diasParaRiego, diaCDMX, diaSemana } from "../../lib/fechas";
 import { pronosticoCDMX, avisoClima } from "../../lib/clima";
 import { consejoDeTemporada } from "../../lib/temporadas";
+import { RESPONSABLE } from "../../lib/legal";
 
 // Este endpoint NO lo llama la app — lo llama Vercel Cron una vez al día
 // (ver vercel.json: 14:00 UTC = 8:00 am en CDMX).
@@ -39,7 +40,7 @@ export default async function handler(req, res) {
   try {
     const admin = clienteAdmin();
     webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT || "mailto:contacto@ambitat.app",
+      process.env.VAPID_SUBJECT || `mailto:${RESPONSABLE.correo}`,
       process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
       process.env.VAPID_PRIVATE_KEY
     );

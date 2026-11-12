@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     const admin = clienteAdmin();
     const [agenda, precios] = await Promise.all([obtenerAgenda(admin), obtenerPrecios(admin)]);
     const { fechas, diasLlenos, libres } = await disponibilidadGeneral(admin, agenda);
-    const respuesta = { horarios: agenda.horarios, fechas, diasLlenos, libres, tamanos: tamanosConPrecios(precios) };
+    const respuesta = { horarios: agenda.horarios, fechas, diasLlenos, libres, tamanos: tamanosConPrecios(precios), pausa: agenda.pausa.activa ? agenda.pausa : null };
     if (fecha) {
       // Al cambiar su cita, la de la propia persona no cuenta como ocupada.
       let excluirId = null;

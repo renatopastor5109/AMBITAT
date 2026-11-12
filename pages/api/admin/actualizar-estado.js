@@ -2,6 +2,7 @@
 // visita), la regresa a "pagado", o resuelve una cita "por resolver".
 import { clienteAdmin } from "../../../lib/usuarioServidor";
 import { esAdmin } from "../../../lib/adminAuth";
+import { alPagar } from "../../../lib/referidosServidor";
 
 const ESTADOS_PERMITIDOS = ["completado", "pagado", "cancelado"];
 // De qué estado a qué estado se puede pasar desde el panel.
@@ -49,7 +50,7 @@ export default async function handler(req, res) {
     .update({ estado })
     .eq("id", id)
     .in("estado", ORIGENES[estado])
-    .select("id, estado");
+    .select("*");
 
   if (error) {
     console.error("Error actualizando estado:", error);
@@ -58,5 +59,8 @@ export default async function handler(req, res) {
   if (!data || data.length === 0) {
     return res.status(409).json({ error: "Esa cita cambió de estado. Toca Actualizar e intenta de nuevo." });
   }
+  // Si decidiste respetar una cita "por resolver", cuenta como pagada también
+  // para "Invita a un amigo" (créditos usados y premio a quien lo invitó).
+  if (estado === "pagado") await alPagar(admin, data[0]);
   return res.status(200).json({ ok: true, estado });
 }

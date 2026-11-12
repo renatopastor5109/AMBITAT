@@ -6,22 +6,14 @@ import { useEffect, useMemo, useState } from "react";
 import { diaCDMX, sumarDias, diaSemana } from "../lib/fechas";
 import { tamanoPorClave, TAMANOS, PRECIO_MINIMO, PRECIO_MAXIMO, formatoPrecio } from "../lib/servicio";
 import { AGENDA_INICIAL, HORARIOS_POSIBLES, NOMBRES_DIAS_SEMANA, normalizarAgenda } from "../lib/agenda";
+import { C, F, EsqueletoTarjetas, campoAdmin, botonChico } from "../components/admin/comun";
+import Inicio from "../components/admin/Inicio";
+import Clientes from "../components/admin/Clientes";
+import Buzon from "../components/admin/Buzon";
+import Comunicar from "../components/admin/Comunicar";
+import { MAX_MENSAJE_PAUSA } from "../lib/agenda";
 
-const C = {
-  bg: "#EAC468",
-  card: "#F5EFDD",
-  cardLine: "#e2d7b8",
-  tileBg: "#EFE6CC",
-  ink: "#221C13",
-  inkSoft: "#6b6047",
-  green: "#3F5D3E",
-  greenDark: "#28402A",
-  amber: "#D6A23D",
-  red: "#9C3B2E",
-  blue: "#3E7CA6",
-};
 
-const F = "'Inter', sans-serif";
 
 const MOTIVOS_CONFLICTO = {
   sin_lugar: "Pagó cuando ese horario o ese día ya estaba lleno.",
@@ -39,24 +31,6 @@ const ESTADOS = {
 
 const CLAVE_SESION = "ambitat-admin-pw";
 
-// Siluetas grises mientras carga una sección.
-function EsqueletoTarjetas({ n = 2 }) {
-  return (
-    <div role="status" aria-label="Cargando">
-      {Array.from({ length: n }, (_, i) => (
-        <div key={i} style={{ background: C.card, borderRadius: 18, padding: 16, marginBottom: 12 }}>
-          <div className="admin-esq" style={{ width: "40%", height: 15 }} />
-          <div className="admin-esq" style={{ width: "85%", height: 11, marginTop: 12 }} />
-          <div className="admin-esq" style={{ width: "65%", height: 11, marginTop: 8 }} />
-          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <div className="admin-esq" style={{ flex: 1, height: 38, borderRadius: 12 }} />
-            <div className="admin-esq" style={{ flex: 1, height: 38, borderRadius: 12 }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function leerSesion() {
   try {
@@ -102,7 +76,7 @@ export default function Admin() {
   const [reservaciones, setReservaciones] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
-  const [vista, setVista] = useState("calendario"); // calendario | proximas | historial | agenda | ajustes
+  const [vista, setVista] = useState("inicio"); // inicio | calendario | proximas | historial | clientes | comunicar | buzon | agenda | crecer | ajustes
   const [agenda, setAgenda] = useState(null);
   const [agendaError, setAgendaError] = useState(null);
   const [precios, setPrecios] = useState(null);
@@ -312,7 +286,7 @@ export default function Admin() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
                 <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.inkSoft, margin: 0 }}>Ámbitat</p>
-                <h1 style={{ fontWeight: 800, fontSize: 24, color: C.ink, margin: "2px 0 0", letterSpacing: "-0.01em" }}>Panel de citas</h1>
+                <h1 style={{ fontWeight: 800, fontSize: 24, color: C.ink, margin: "2px 0 0", letterSpacing: "-0.01em" }}>Panel</h1>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => cargar(password)} disabled={cargando} style={botonChico}>
@@ -338,24 +312,38 @@ export default function Admin() {
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
-              <Stat valor={resumen.proximos7} label="Citas en los próximos 7 días" destacado />
-              <Stat valor={resumen.proximas} label="Próximas confirmadas" />
-              <Stat valor={resumen.pendientes} label="Esperando pago (OXXO)" />
-              <Stat valor={`$${(resumen.cobrado / 100).toLocaleString("es-MX")}`} label="Cobrado en total" />
-            </div>
+            {agenda?.pausa?.activa && (
+              <button
+                onClick={() => setVista("agenda")}
+                style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", fontFamily: F, background: C.ink, color: C.card, borderRadius: 14, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, lineHeight: 1.4 }}
+              >
+                <strong>⏸️ Las reservaciones están pausadas.</strong> Nadie puede reservar hasta que las reactives en Servicio.
+              </button>
+            )}
 
             <div className="admin-pestanas" style={{ display: "flex", background: C.card, borderRadius: 14, padding: 4, marginBottom: 12, overflowX: "auto", scrollbarWidth: "none" }}>
               {[
+                ["inicio", "Inicio"],
                 ["calendario", "Calendario"],
-                ["proximas", "Próximas"],
+                ["proximas", `Próximas${resumen.proximas ? ` (${resumen.proximas})` : ""}`],
                 ["historial", "Historial"],
+                ["clientes", "Clientes"],
+                ["comunicar", "Comunicar"],
+                ["buzon", "Buzón"],
                 ["agenda", "Servicio"],
                 ["crecer", "Crecer"],
                 ["ajustes", "Ajustes"],
               ].map(([k, l]) => (
                 <button
                   key={k}
+                  aria-pressed={vista === k}
+                  ref={(el) => {
+                    // Que la pestaña activa se vea (solo de lado, sin mover la página).
+                    if (!el || vista !== k) return;
+                    const fila = el.parentElement;
+                    const izq = el.offsetLeft - fila.offsetLeft;
+                    if (izq < fila.scrollLeft || izq + el.offsetWidth > fila.scrollLeft + fila.clientWidth) fila.scrollLeft = Math.max(0, izq - 16);
+                  }}
                   onClick={() => setVista(k)}
                   style={{ flex: "1 0 auto", whiteSpace: "nowrap", border: "none", borderRadius: 11, padding: "10px 12px", fontFamily: F, fontWeight: 700, fontSize: 13, cursor: "pointer", background: vista === k ? C.green : "transparent", color: vista === k ? "#fff" : C.inkSoft }}
                 >
@@ -371,10 +359,19 @@ export default function Admin() {
               </label>
             )}
 
-            {vista === "crecer" ? (
+            {vista === "inicio" ? (
+              <Inicio password={password} citasHoy={reservaciones.filter((r) => r.fecha === hoy && r.estado === "pagado").sort((a, b) => horaAMinutos(a.hora) - horaAMinutos(b.hora))} alIr={setVista} />
+            ) : vista === "clientes" ? (
+              <Clientes password={password} />
+            ) : vista === "comunicar" ? (
+              <Comunicar password={password} />
+            ) : vista === "buzon" ? (
+              <Buzon password={password} />
+            ) : vista === "crecer" ? (
               <Crecer password={password} />
             ) : vista === "agenda" ? (
               <>
+                {agenda && <PausaConfig agenda={agenda} onGuardar={guardarAgenda} />}
                 {precios && <PreciosConfig precios={precios} onGuardar={guardarPrecios} />}
                 <ZonasConfig password={password} />
                 {agenda ? (
@@ -528,6 +525,20 @@ function Ajustes({ password }) {
         </form>
         {prueba && <p style={{ fontSize: 13, color: prueba.ok ? C.green : C.red, margin: "10px 0 0", lineHeight: 1.45 }}>{prueba.mensaje}</p>}
       </div>
+
+      {datos.baseDeDatos && (
+        <div style={tarjeta}>
+          <p style={titulo}>Base de datos al día</p>
+          {datos.baseDeDatos.map((b) => (
+            <Fila
+              key={b.archivo}
+              ok={b.lista}
+              nombre={b.archivo}
+              detalle={b.lista ? b.para + "." : `${b.para}: falta correrlo en Supabase → SQL Editor (pega todo el archivo y dale Run).`}
+            />
+          ))}
+        </div>
+      )}
 
       <div style={tarjeta}>
         <p style={titulo}>Variables de Vercel</p>
@@ -694,7 +705,52 @@ function Crecer({ password }) {
   );
 }
 
-const campoAdmin = { width: "100%", border: "1px solid #e2d7b8", borderRadius: 12, padding: "11px 12px", fontFamily: "'Inter', sans-serif", fontSize: 16, color: "#221C13", background: "#EFE6CC" };
+
+// ---------- Pausar reservaciones (vacaciones, mucho trabajo...) ----------
+function PausaConfig({ agenda, onGuardar }) {
+  const [mensaje, setMensaje] = useState(agenda.pausa?.mensaje || "");
+  const [guardando, setGuardando] = useState(false);
+  const activa = !!agenda.pausa?.activa;
+  async function cambiar(nuevaActiva, preguntar = true) {
+    if (nuevaActiva && preguntar && !window.confirm("¿Pausar las reservaciones? Nadie podrá reservar hasta que las reactives. Las citas ya pagadas no cambian.")) return;
+    setGuardando(true);
+    await onGuardar({ ...agenda, pausa: { activa: nuevaActiva, mensaje: mensaje.trim() } });
+    setGuardando(false);
+  }
+  return (
+    <div style={{ background: activa ? C.ink : C.card, color: activa ? C.card : C.ink, borderRadius: 18, padding: "16px 16px", marginBottom: 12 }}>
+      <p style={{ fontWeight: 800, fontSize: 15, margin: "0 0 4px" }}>{activa ? "⏸️ Reservaciones pausadas" : "Reservaciones abiertas"}</p>
+      <p style={{ fontSize: 12.5, margin: "0 0 10px", lineHeight: 1.45, opacity: 0.8 }}>
+        {activa
+          ? "En la Tienda aparece tu mensaje en lugar del botón Reservar. Las citas ya pagadas siguen igual."
+          : "Si te vas de vacaciones o tienes demasiado trabajo, pausa todo con un toque (para días sueltos usa el Calendario)."}
+      </p>
+      <textarea
+        value={mensaje}
+        onChange={(e) => setMensaje(e.target.value)}
+        maxLength={MAX_MENSAJE_PAUSA}
+        rows={2}
+        placeholder="Mensaje para tus clientes (ej. Regresamos el 2 de enero 🌿)"
+        aria-label="Mensaje mientras están pausadas"
+        style={{ ...campoAdmin, fontSize: 14.5, resize: "vertical", lineHeight: 1.45 }}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <button
+          onClick={() => cambiar(!activa)}
+          disabled={guardando}
+          style={{ flex: 2, padding: "12px 0", borderRadius: 14, border: "none", background: activa ? C.green : C.red, color: "#fff", fontFamily: F, fontWeight: 800, fontSize: 14.5, cursor: "pointer" }}
+        >
+          {guardando ? "Guardando..." : activa ? "Reactivar reservaciones" : "Pausar reservaciones"}
+        </button>
+        {activa && mensaje.trim() !== (agenda.pausa?.mensaje || "") && (
+          <button onClick={() => cambiar(true, false)} disabled={guardando} style={{ ...botonChico, flex: 1 }}>
+            Guardar mensaje
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ---------- Zonas donde das servicio (se ven en /conoce) ----------
 function ZonasConfig({ password }) {
@@ -1137,26 +1193,7 @@ function Calendario({ reservaciones, hoy, actualizando, onCambiarEstado, agenda,
   );
 }
 
-const botonChico = {
-  background: C.card,
-  border: "none",
-  borderRadius: 10,
-  padding: "8px 12px",
-  fontFamily: F,
-  fontWeight: 700,
-  fontSize: 12.5,
-  color: C.ink,
-  cursor: "pointer",
-};
 
-function Stat({ valor, label, destacado }) {
-  return (
-    <div style={{ background: destacado ? C.green : C.card, borderRadius: 16, padding: "14px 14px" }}>
-      <p style={{ fontWeight: 800, fontSize: 24, color: destacado ? "#fff" : C.ink, margin: 0, letterSpacing: "-0.01em" }}>{valor}</p>
-      <p style={{ fontSize: 12, fontWeight: 600, color: destacado ? "rgba(255,255,255,0.8)" : C.inkSoft, margin: "2px 0 0" }}>{label}</p>
-    </div>
-  );
-}
 
 function Cita({ r, actualizando, onCambiarEstado }) {
   const est = ESTADOS[r.estado] || { label: r.estado, color: C.inkSoft };

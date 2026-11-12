@@ -121,6 +121,8 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .brotes-primera, .brotes-primera-slide, .brotes-primera * { animation: none !important; }
 }
+.brotes-sin-barra { scrollbar-width: none; }
+.brotes-sin-barra::-webkit-scrollbar { display: none; }
 /* Siluetas grises mientras algo carga */
 .brotes-esqueleto {
   background: linear-gradient(90deg, #EFE6CC 25%, #f7f1e1 50%, #EFE6CC 75%);
@@ -509,6 +511,135 @@ function Tag({ children, color }) {
 }
 
 // ---------- Tarjeta de planta: estilo "widget" (tarjeta blanca, íconos, jerarquía tipo Salud/Clima) ----------
+// ---------- Espacios: en qué cuarto está cada planta ----------
+const ESPACIOS_SUGERIDOS = [
+  ["Sala", "🛋️"],
+  ["Recámara", "🛏️"],
+  ["Cocina", "🍳"],
+  ["Baño", "🛁"],
+  ["Comedor", "🍽️"],
+  ["Balcón", "🌤️"],
+  ["Terraza", "☀️"],
+  ["Jardín", "🌳"],
+  ["Oficina", "💼"],
+  ["Estudio", "📚"],
+];
+const MAX_LARGO_ESPACIO = 24;
+function sinAcentos(t) {
+  return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+}
+function emojiEspacio(nombre) {
+  const n = sinAcentos(nombre);
+  const hallado = ESPACIOS_SUGERIDOS.find(([e]) => n.startsWith(sinAcentos(e)));
+  return hallado ? hallado[1] : "📍";
+}
+function limpiarEspacio(texto) {
+  const t = String(texto || "").replace(/\s+/g, " ").trim().slice(0, MAX_LARGO_ESPACIO);
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : null;
+}
+// Los cuartos que ya usa la persona (con cuántas plantas), en orden de uso.
+function espaciosDelJardin(garden) {
+  const cuenta = new Map();
+  garden.forEach((p) => {
+    if (!p.espacio) return;
+    const clave = sinAcentos(p.espacio);
+    const x = cuenta.get(clave) || { nombre: p.espacio, n: 0 };
+    x.n += 1;
+    cuenta.set(clave, x);
+  });
+  return [...cuenta.values()].sort((a, b) => b.n - a.n || a.nombre.localeCompare(b.nombre, "es"));
+}
+const mismoEspacio = (a, b) => !!a && !!b && sinAcentos(a) === sinAcentos(b);
+
+function SelectorEspacio({ valor, usados, onElegir, guardando }) {
+  const F = "'Inter', sans-serif";
+  const [otro, setOtro] = useState(false);
+  const [texto, setTexto] = useState("");
+  // Primero los que ya usa; luego las sugerencias que falten.
+  const opciones = [...usados.map((u) => u.nombre)];
+  ESPACIOS_SUGERIDOS.forEach(([e]) => {
+    if (!opciones.some((o) => mismoEspacio(o, e))) opciones.push(e);
+  });
+  if (valor && !opciones.some((o) => mismoEspacio(o, valor))) opciones.unshift(valor);
+  const chip = (activo) => ({
+    flexShrink: 0,
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: activo ? "1.5px solid " + C.green : "1px solid " + C.cardLine,
+    background: activo ? "rgba(63,93,62,0.1)" : "transparent",
+    color: activo ? C.green : C.ink,
+    fontFamily: F,
+    fontWeight: activo ? 800 : 600,
+    fontSize: 13,
+    cursor: guardando ? "default" : "pointer",
+    opacity: guardando ? 0.6 : 1,
+  });
+  function guardarOtro() {
+    const limpio = limpiarEspacio(texto);
+    if (!limpio) return;
+    const existente = opciones.find((o) => mismoEspacio(o, limpio));
+    onElegir(existente || limpio);
+    setOtro(false);
+    setTexto("");
+  }
+  return (
+    <div>
+      <div role="radiogroup" aria-label="¿En qué cuarto está?" style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+        {opciones.map((o) => {
+          const activo = mismoEspacio(o, valor);
+          return (
+            <button key={o} role="radio" aria-checked={activo} disabled={guardando} onClick={() => onElegir(activo ? null : o)} style={chip(activo)}>
+              {emojiEspacio(o)} {o}
+            </button>
+          );
+        })}
+        {!otro && (
+          <button onClick={() => setOtro(true)} disabled={guardando} style={{ ...chip(false), borderStyle: "dashed" }}>
+            + Otro
+          </button>
+        )}
+      </div>
+      {otro && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            guardarOtro();
+          }}
+          style={{ display: "flex", gap: 8, marginTop: 10 }}
+        >
+          <input
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            maxLength={MAX_LARGO_ESPACIO}
+            autoFocus
+            placeholder="Ej. Cuarto de Ana, Patio"
+            aria-label="Nombre del cuarto"
+            style={{ flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 12, border: "1px solid " + C.cardLine, fontFamily: F, fontSize: 14, color: C.ink, background: "#fff" }}
+          />
+          <button type="submit" disabled={!texto.trim()} style={{ padding: "0 16px", borderRadius: 12, border: "none", background: texto.trim() ? C.green : C.cardLine, color: "#fff", fontFamily: F, fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>
+            Listo
+          </button>
+          <button type="button" onClick={() => setOtro(false)} aria-label="Cancelar" style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: "0 4px", display: "flex", alignItems: "center" }}>
+            <Icon.X />
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function TarjetaEspacio({ plant, usados, guardando, onElegir, titulo = "¿En qué cuarto está?" }) {
+  return (
+    <div style={{ marginTop: 14, background: C.card, borderRadius: 18, padding: "14px 14px 16px" }}>
+      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 14, color: C.ink, margin: "0 0 2px" }}>{titulo}</p>
+      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 10px" }}>
+        {plant.espacio ? "Así la encuentras rápido y riegas cuarto por cuarto." : "Agrupa tus plantas por cuarto para regarlas en orden."}
+      </p>
+      <SelectorEspacio valor={plant.espacio} usados={usados} guardando={guardando} onElegir={onElegir} />
+    </div>
+  );
+}
+
 function PlantCard({ data, imageUrl, footer, compact, nameEdit }) {
   const estadoColor = ESTADO_COLOR[data.estado_general] || C.amber;
   const estadoTexto = ESTADO_TEXTO[data.estado_general] || AMBAR_TEXTO;
@@ -616,6 +747,11 @@ function PlantCard({ data, imageUrl, footer, compact, nameEdit }) {
                 {estadoLabel}
               </span>
             </div>
+            {compact && data.espacio && (
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, margin: "3px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {emojiEspacio(data.espacio)} {data.espacio}
+              </p>
+            )}
           </div>
         </div>
 
@@ -2206,7 +2342,8 @@ function pendientesDeHoy(garden, reservaciones) {
         planta: p,
         orden: w.late ? 0 : 1,
         titulo: `Regar ${p.nombre_comun || "planta"}`,
-        detalle: w.late ? (w.remaining === -1 ? "Le tocaba ayer" : `Le tocaba hace ${-w.remaining} días`) : "Le toca hoy",
+        detalle: (w.late ? (w.remaining === -1 ? "Le tocaba ayer" : `Le tocaba hace ${-w.remaining} días`) : "Le toca hoy") + (p.espacio ? ` · ${p.espacio}` : ""),
+        espacio: p.espacio ? sinAcentos(p.espacio) : "~",
       });
     }
   });
@@ -2230,7 +2367,8 @@ function pendientesDeHoy(garden, reservaciones) {
     const cuando = dias === 0 ? "Hoy" : dias === 1 ? "Mañana" : new Date(cita.fecha + "T12:00:00").toLocaleDateString("es-MX", { weekday: "long" });
     tareas.push({ tipo: "cita", reservacion: cita, orden: -1, titulo: "Mantenimiento a domicilio", detalle: `${cuando.charAt(0).toUpperCase() + cuando.slice(1)} a las ${cita.hora}` });
   }
-  return tareas.sort((a, b) => a.orden - b.orden);
+  // Las de regar, agrupadas por cuarto (para ir de uno en uno).
+  return tareas.sort((a, b) => a.orden - b.orden || (a.tipo === "regar" && b.tipo === "regar" ? (a.espacio < b.espacio ? -1 : a.espacio > b.espacio ? 1 : 0) : 0));
 }
 
 function HoyEnTuJardin({ garden, reservaciones, regadaHoy, regando, onRegar, onAbrirPlanta, onFoto, onAbrirCita, clima, temporada }) {
@@ -2833,6 +2971,69 @@ export default function BrotesApp() {
     );
   }
 
+  // ---------- Espacios ----------
+  const [guardandoEspacio, setGuardandoEspacio] = useState(null); // id de planta
+  const [filtroEspacio, setFiltroEspacio] = useState(() => {
+    try {
+      return localStorage.getItem("ambitat-espacio") || "todas";
+    } catch {
+      return "todas";
+    }
+  });
+  function elegirFiltroEspacio(valor) {
+    setFiltroEspacio(valor);
+    try {
+      localStorage.setItem("ambitat-espacio", valor);
+    } catch {}
+  }
+  async function guardarEspacio(plantId, espacio) {
+    if (guardandoEspacio) return;
+    const anterior = garden.find((p) => p.id === plantId)?.espacio || null;
+    if ((anterior || null) === (espacio || null)) return;
+    setGuardandoEspacio(plantId);
+    setGarden((prev) => prev.map((p) => (p.id === plantId ? { ...p, espacio } : p)));
+    const { error } = await supabase.from("plantas").update({ espacio }).eq("id", plantId);
+    setGuardandoEspacio(null);
+    if (error) {
+      console.error("Error guardando el cuarto:", error);
+      setGarden((prev) => prev.map((p) => (p.id === plantId ? { ...p, espacio: anterior } : p)));
+      setAviso(
+        error.code === "PGRST204" || error.code === "42703"
+          ? "Los cuartos todavía no están activados. Intenta más tarde."
+          : "No se pudo guardar el cuarto. Revisa tu conexión e intenta de nuevo."
+      );
+    }
+  }
+  // Regar de una vez todas las que tocan en un cuarto.
+  const [regandoVarias, setRegandoVarias] = useState(false);
+  async function regarVarias(plantas, nombreEspacio) {
+    if (regandoVarias || !plantas.length) return;
+    setRegandoVarias(true);
+    const ahora = new Date().toISOString();
+    const cambios = plantas.map((plant) => {
+      const estado = getWateringStatus(plant);
+      const rachaActual = plant.racha_riego || 0;
+      const racha = estado?.late ? 0 : estado && estado.remaining <= 1 ? rachaActual + 1 : rachaActual;
+      return { plant, racha };
+    });
+    const resultados = await Promise.all(
+      cambios.map(({ plant, racha }) => supabase.from("plantas").update({ ultimo_riego: ahora, racha_riego: racha }).eq("id", plant.id).then(({ error }) => ({ plant, racha, error })))
+    );
+    setRegandoVarias(false);
+    const bien = resultados.filter((r) => !r.error);
+    setGarden((prev) =>
+      prev.map((p) => {
+        const r = bien.find((x) => x.plant.id === p.id);
+        return r ? { ...p, ultimo_riego: ahora, racha_riego: r.racha } : p;
+      })
+    );
+    if (bien.length < resultados.length) {
+      setAviso(`Se guardaron ${bien.length} de ${resultados.length}. Revisa tu conexión e intenta con las que faltan.`);
+    } else {
+      setAviso(`💧 Listo, regaste ${bien.length} plantas${nombreEspacio ? ` de ${nombreEspacio}` : ""}.`);
+    }
+  }
+
   // Ficha de cuidado: se pide la primera vez que se abre una planta.
   const [fichaCargando, setFichaCargando] = useState(null);
   const [fichaError, setFichaError] = useState(null);
@@ -2888,6 +3089,12 @@ export default function BrotesApp() {
   const [aviso, setAviso] = useState(null); // mensaje flotante que se cierra con la ×
 
   const [garden, setGarden] = useState([]);
+  const espaciosUsados = useMemo(() => espaciosDelJardin(garden), [garden]);
+  // Si se borró el último de un cuarto, el filtro regresa a "Todas".
+  const filtroVigente =
+    filtroEspacio === "todas" ||
+    (filtroEspacio === "sin" ? garden.some((p) => !p.espacio) : espaciosUsados.some((e) => mismoEspacio(e.nombre, filtroEspacio)));
+  const filtroActual = filtroVigente ? filtroEspacio : "todas";
   const [userId, setUserId] = useState(null);
   const userIdRef = useRef(null); // siempre el valor actual (las funciones async no se quedan con uno viejo)
   const [gardenError, setGardenError] = useState(null);
@@ -2999,6 +3206,7 @@ export default function BrotesApp() {
       libres: d.libres || {},
       horarios: d.horarios || HORARIOS_DISPONIBLES,
       tamanos: Array.isArray(d.tamanos) && d.tamanos.length ? d.tamanos : null,
+      pausa: d.pausa?.activa ? d.pausa : null,
     });
   }
   const [disponibilidadFallo, setDisponibilidadFallo] = useState(false);
@@ -3141,6 +3349,7 @@ export default function BrotesApp() {
       history: row.historial || [],
       ultimo_riego: row.ultimo_riego || null,
       ficha: row.ficha || null,
+      espacio: row.espacio || null,
     };
   }
 
@@ -3171,6 +3380,60 @@ export default function BrotesApp() {
   const [usuarioCorreo, setUsuarioCorreo] = useState("");
   // Por qué se está pidiendo la cuenta (null = no se muestra la pantalla).
   const [cuentaMotivo, setCuentaMotivo] = useState(null); // entrar | guardar | plantas | reservar | recordatorios
+
+  // ---------- Enlaces a una sección: /?ir=tienda | camara | comunidad | jardin ----------
+  // (los usan el anuncio y las notificaciones que mandas desde /admin)
+  const irProcesado = useRef(false);
+  useEffect(() => {
+    if (authEstado !== "lista" || loadingGarden || irProcesado.current) return;
+    irProcesado.current = true;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ir = params.get("ir");
+      if (!ir) return;
+      params.delete("ir");
+      const resto = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (resto ? "?" + resto : "") + window.location.hash);
+      if (ir === "tienda" || ir === "comunidad") setScreen(ir);
+      else if (ir === "camara") openCamera("new");
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authEstado, loadingGarden]);
+
+  // ---------- Anuncio de Ámbitat (lo editas en /admin → Comunicar) ----------
+  const [anuncio, setAnuncio] = useState(null);
+  useEffect(() => {
+    fetch("/api/anuncio")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const a = d?.anuncio;
+        if (!a?.texto) return;
+        let cerrado = null;
+        try {
+          cerrado = localStorage.getItem("ambitat-anuncio-cerrado");
+        } catch {}
+        if (cerrado !== a.id) setAnuncio(a);
+      })
+      .catch(() => {});
+  }, []);
+  function cerrarAnuncio() {
+    try {
+      localStorage.setItem("ambitat-anuncio-cerrado", anuncio?.id || "");
+    } catch {}
+    setAnuncio(null);
+  }
+  function abrirEnlaceAnuncio() {
+    const e = anuncio?.enlace;
+    if (!e) return;
+    if (e.startsWith("/?ir=")) {
+      const ir = new URLSearchParams(e.slice(1)).get("ir");
+      if (ir === "tienda" || ir === "comunidad") setScreen(ir);
+      else if (ir === "camara") openCamera("new");
+      return;
+    }
+    if (e.startsWith("/")) window.location.href = e;
+    else window.open(e, "_blank", "noopener");
+  }
 
   // ---------- De dónde llegó: QR de un vivero (?v=) o invitación de un amigo (?ref=) ----------
   const [bienvenida, setBienvenida] = useState(null); // { tipo: "vivero", nombre } | { tipo: "amigo" }
@@ -4225,6 +4488,17 @@ export default function BrotesApp() {
                       </button>
                     </div>
                   )}
+                  {isSaved && !isSaving && captureMode !== "followup" && savedPlantId && garden.some((p) => p.id === savedPlantId) && (
+                    <div style={{ marginTop: 12 }}>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, color: C.ink, margin: "0 0 8px" }}>¿En qué cuarto está?</p>
+                      <SelectorEspacio
+                        valor={garden.find((p) => p.id === savedPlantId)?.espacio || null}
+                        usados={espaciosUsados}
+                        guardando={guardandoEspacio === savedPlantId}
+                        onElegir={(e) => guardarEspacio(savedPlantId, e)}
+                      />
+                    </div>
+                  )}
                   {isSaved && !isSaving && esAnonimo && captureMode !== "followup" && (
                     <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, background: "rgba(63,93,62,0.08)", borderRadius: 14, padding: "10px 12px" }}>
                       <p style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.ink, margin: 0, lineHeight: 1.4 }}>
@@ -4377,6 +4651,37 @@ export default function BrotesApp() {
                 </button>
               )}
 
+              {anuncio && (
+                <div
+                  role="status"
+                  style={{
+                    marginTop: 14,
+                    borderRadius: 18,
+                    padding: "12px 12px 12px 14px",
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "flex-start",
+                    background: anuncio.tono === "ambar" ? "#F6E3B4" : anuncio.tono === "azul" ? "#DCE8F1" : "#DDE6D3",
+                    border: "1px solid " + (anuncio.tono === "ambar" ? "#e3c57c" : anuncio.tono === "azul" ? "#b7cfe0" : "#bccbb0"),
+                  }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 18, lineHeight: "22px" }}>📣</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.ink, margin: 0, lineHeight: 1.45 }}>{anuncio.texto}</p>
+                    {anuncio.enlace && (
+                      <button
+                        onClick={abrirEnlaceAnuncio}
+                        style={{ marginTop: 8, background: C.ink, color: C.card, border: "none", borderRadius: 999, padding: "7px 14px", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}
+                      >
+                        {anuncio.boton || "Ver más"}
+                      </button>
+                    )}
+                  </div>
+                  <button onClick={cerrarAnuncio} aria-label="Cerrar anuncio" style={{ background: "none", border: "none", color: C.inkSoft, cursor: "pointer", padding: 4, display: "flex" }}>
+                    <Icon.X style={{ width: 15, height: 15 }} />
+                  </button>
+                </div>
+              )}
               {bienvenida && (
                 <div style={{ marginTop: 14, background: C.green, color: "#fff", borderRadius: 18, padding: "14px 14px 14px 16px", display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <span aria-hidden="true" style={{ fontSize: 22 }}>{bienvenida.tipo === "amigo" ? "🎁" : "🌱"}</span>
@@ -4604,6 +4909,41 @@ export default function BrotesApp() {
               ) : (
                 <>
                   {/* (El aviso de "plantas que necesitan agua" ahora vive en la tarjeta "Hoy".) */}
+                  {espaciosUsados.length > 0 && (
+                    <div role="group" aria-label="Filtrar por cuarto" className="brotes-sin-barra" style={{ display: "flex", gap: 8, margin: "0 -16px 10px", padding: "0 16px", overflowX: "auto" }}>
+                      {[
+                        { key: "todas", label: "Todas", n: garden.length },
+                        ...espaciosUsados.map((e) => ({ key: e.nombre, label: `${emojiEspacio(e.nombre)} ${e.nombre}`, n: e.n })),
+                        ...(garden.some((p) => !p.espacio) ? [{ key: "sin", label: "Sin cuarto", n: garden.filter((p) => !p.espacio).length }] : []),
+                      ].map((op) => {
+                        const activo = op.key === "todas" || op.key === "sin" ? filtroActual === op.key : mismoEspacio(filtroActual, op.key);
+                        return (
+                          <button
+                            key={op.key}
+                            aria-pressed={activo}
+                            onClick={() => elegirFiltroEspacio(op.key)}
+                            style={{ flexShrink: 0, padding: "8px 14px", borderRadius: 999, border: activo ? "none" : "1px solid " + C.cardLine, background: activo ? C.ink : C.card, color: activo ? C.card : C.ink, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            {op.label} <span style={{ opacity: 0.6, fontWeight: 600 }}>{op.n}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(() => {
+                    if (filtroActual === "todas" || filtroActual === "sin") return null;
+                    const porRegar = garden.filter((p) => mismoEspacio(p.espacio, filtroActual) && getWateringStatus(p)?.urgent && !regadaHoy(p));
+                    if (porRegar.length < 2) return null;
+                    return (
+                      <button
+                        onClick={() => regarVarias(porRegar, filtroActual)}
+                        disabled={regandoVarias}
+                        style={{ width: "100%", minHeight: 46, marginBottom: 12, borderRadius: 14, border: "none", background: C.blue, color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: regandoVarias ? 0.7 : 1 }}
+                      >
+                        {regandoVarias ? "Guardando..." : `💧 Ya regué las ${porRegar.length} de ${filtroActual}`}
+                      </button>
+                    );
+                  })()}
                   <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }}>
                     {[
                       { key: "recientes", label: "Recientes" },
@@ -4633,7 +4973,10 @@ export default function BrotesApp() {
                   </div>
 
                   <div className="brotes-grid">
-                  {ordenarJardin(garden, ordenJardin).map((p) => (
+                  {ordenarJardin(
+                    garden.filter((p) => (filtroActual === "todas" ? true : filtroActual === "sin" ? !p.espacio : mismoEspacio(p.espacio, filtroActual))),
+                    ordenJardin
+                  ).map((p) => (
                     <div
                       key={p.id}
                       className="brotes-reveal"
@@ -4722,6 +5065,12 @@ export default function BrotesApp() {
             >
               {imagenCompartir === "cargando" ? "Preparando imagen..." : "📤 Compartir mi planta"}
             </button>
+            <TarjetaEspacio
+              plant={activePlant}
+              usados={espaciosUsados}
+              guardando={guardandoEspacio === activePlant.id}
+              onElegir={(e) => guardarEspacio(activePlant.id, e)}
+            />
 
             <FichaCuidado
               ficha={activePlant.ficha}
@@ -5159,7 +5508,15 @@ export default function BrotesApp() {
                   </p>
 
                   {/* ---- Paso 1 ---- */}
-                  {tiendaPaso === "inicio" && (
+                  {disponibilidad?.pausa && (
+                    <div role="status" style={{ marginTop: 12, background: "rgba(214,162,61,0.16)", borderRadius: 14, padding: "12px 14px" }}>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 14, color: C.ink, margin: 0 }}>⏸️ Por ahora no estamos tomando reservaciones</p>
+                      <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.ink, margin: "4px 0 0", lineHeight: 1.45 }}>
+                        {disponibilidad.pausa.mensaje || "Vuelve pronto. Tus citas ya confirmadas siguen en pie."}
+                      </p>
+                    </div>
+                  )}
+                  {tiendaPaso === "inicio" && !disponibilidad?.pausa && (
                     <>
                       {botonPrincipal("Reservar", () => (esAnonimo ? pedirCuenta("reservar") : setTiendaPaso("tamano")), false)}
                       <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: C.inkSoft, textAlign: "center", margin: "8px 0 0" }}>

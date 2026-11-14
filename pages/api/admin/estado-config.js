@@ -12,6 +12,7 @@ const REVISIONES = [
   ["supabase-revision-4.sql", "Viveros con QR e Invita a un amigo", "aliados", "slug"],
   ["supabase-revision-5.sql", "Espacios (cuartos)", "plantas", "espacio"],
   ["supabase-revision-6.sql", "Notas de clientes, buzón y notificaciones a todos", "notas_clientes", "user_id"],
+  ["supabase-revision-7.sql", "Códigos de descuento", "cupones", "codigo"],
 ];
 
 async function revisarBaseDeDatos() {

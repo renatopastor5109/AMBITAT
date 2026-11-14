@@ -1,49 +1,15 @@
-// Página de presentación (web pública). Se ve en "/" para quien llega por
-// primera vez y en "/conoce". Precios y zonas: /admin → Servicio.
+// Página de presentación (web pública), en español e inglés. Se ve en "/" para
+// quien llega por primera vez y en "/conoce".
+// Textos: lib/textosPresentacion.js · Precios, zonas y días: /admin → Servicio.
 import Head from "next/head";
 import { useEffect, useRef, useState } from "react";
 import { RESPONSABLE as R } from "../lib/legal";
 import { formatoPrecio, tamanosConPrecios } from "../lib/servicio";
 import { ZONAS_INICIALES, enlaceWhatsApp } from "../lib/negocio";
+import { AGENDA_INICIAL } from "../lib/agenda";
+import { TEXTOS, DEMO, diasDeVisita, textoIncluye, nombreTamano } from "../lib/textosPresentacion";
 
-const MENSAJE_WA = "Hola, vi Ámbitat y quiero información sobre el mantenimiento de plantas a domicilio.";
-const MENSAJE_VERTICAL = "Hola, vi Ámbitat y me interesa un jardín vertical. Te cuento de mi espacio:";
-
-// ---------- Plantas de ejemplo para la demo ----------
-const DEMO = [
-  {
-    clave: "monstera",
-    nombre: "Monstera",
-    cientifico: "Monstera deliciosa",
-    img: "/stages/s6.png",
-    estado: ["✅ Saludable", "verde"],
-    datos: ["💧 Cada 7 días", "☀️ Luz indirecta brillante", "🐾 Tóxica para mascotas"],
-    consejo: "Gírala un poco cada semana para que crezca pareja.",
-    aviso: "Tu Monstera necesita agua el jueves 💧",
-  },
-  {
-    clave: "suculenta",
-    nombre: "Suculenta",
-    cientifico: "Echeveria elegans",
-    img: "/stages/s3.png",
-    estado: ["✅ Saludable", "verde"],
-    datos: ["💧 Cada 14 días", "☀️ Sol directo", "🐾 Segura para mascotas"],
-    consejo: "Riega solo cuando la tierra esté seca del todo.",
-    aviso: "Viene lluvia fuerte: mete tu suculenta bajo techo 🌧️",
-  },
-  {
-    clave: "pothos",
-    nombre: "Pothos",
-    cientifico: "Epipremnum aureum",
-    img: "/stages/s5.png",
-    estado: ["⚠️ Hojas amarillas", "ambar"],
-    datos: ["💧 Cada 7 a 10 días", "⛅ Luz media", "🐾 Tóxica para mascotas"],
-    consejo: "Las hojas amarillas suelen ser exceso de agua: deja secar la tierra.",
-    aviso: "Hoy no riegues tu Pothos: su tierra sigue húmeda 🌱",
-  },
-];
-
-function DemoTelefono() {
+function DemoTelefono({ t, idioma }) {
   const [elegida, setElegida] = useState(null);
   const [fase, setFase] = useState("elige"); // elige | escaneando | resultado
   const [aviso, setAviso] = useState(false);
@@ -89,39 +55,41 @@ function DemoTelefono() {
     };
   }, []);
 
+  const d = t.demo;
+  const p = elegida?.[idioma];
   return (
     <div className="dm" ref={caja}>
-      <div className="dm-telefono" aria-label="Demostración de la app Ámbitat" role="group">
+      <div className="dm-telefono" aria-label={d.etiqueta} role="group">
         <div className="dm-isla" aria-hidden="true" />
         <div className={"dm-aviso" + (aviso ? " dm-aviso-ve" : "")} role="status" aria-live="polite">
-          {aviso && elegida && (
+          {aviso && p && (
             <>
               <img src="/icon-192.png" alt="" />
               <span>
-                <strong>Ámbitat 🌿</strong> <em>ahora</em>
+                <strong>Ámbitat 🌿</strong> <em>{d.ahora}</em>
                 <br />
-                {elegida.aviso}
+                {p.aviso}
               </span>
             </>
           )}
         </div>
         <div className="dm-pantalla">
-          <p className="dm-titulo">{fase === "elige" ? "Mi jardín" : fase === "escaneando" ? "Analizando…" : "Listo"}</p>
+          <p className="dm-titulo">{fase === "elige" ? d.miJardin : fase === "escaneando" ? d.analizando : d.listo}</p>
 
           {fase === "elige" && (
             <div className="dm-elige">
-              <p className="dm-instruccion">Toca una planta para escanearla</p>
+              <p className="dm-instruccion">{d.instruccion}</p>
               <div className="dm-plantas">
-                {DEMO.map((p) => (
+                {DEMO.map((x) => (
                   <button
-                    key={p.clave}
+                    key={x.clave}
                     onClick={() => {
                       tocado.current = true;
-                      escanear(p);
+                      escanear(x);
                     }}
                   >
-                    <img src={p.img} alt="" />
-                    <span>{p.nombre}</span>
+                    <img src={x.img} alt="" />
+                    <span>{x[idioma].nombre}</span>
                   </button>
                 ))}
               </div>
@@ -140,17 +108,17 @@ function DemoTelefono() {
               </div>
               {fase === "resultado" && (
                 <div className="dm-resultado">
-                  <p className="dm-nombre">{elegida.nombre}</p>
+                  <p className="dm-nombre">{p.nombre}</p>
                   <p className="dm-cientifico">{elegida.cientifico}</p>
                   <div className="dm-chips">
-                    <span className={"dm-chip dm-" + elegida.estado[1]}>{elegida.estado[0]}</span>
-                    {elegida.datos.map((d) => (
-                      <span key={d} className="dm-chip">
-                        {d}
+                    <span className={"dm-chip dm-" + elegida.tono}>{p.estado}</span>
+                    {p.datos.map((x) => (
+                      <span key={x} className="dm-chip">
+                        {x}
                       </span>
                     ))}
                   </div>
-                  <p className="dm-consejo">{elegida.consejo}</p>
+                  <p className="dm-consejo">{p.consejo}</p>
                 </div>
               )}
             </div>
@@ -173,53 +141,47 @@ function DemoTelefono() {
               otra();
             }}
           >
-            Probar con otra planta
+            {d.otra}
           </button>
         ) : (
-          <p>Así funciona. Toca una planta.</p>
+          <p>{d.pie}</p>
         )}
       </div>
     </div>
   );
 }
 
-const PREGUNTAS = (tamanos, zonas) => [
-  ["¿La app cuesta?", "No. Identificar tus plantas, ver cómo cuidarlas y recibir los avisos de riego es gratis."],
-  [
-    "¿Necesito descargar algo?",
-    "No hace falta tienda de apps: se abre en el navegador de tu celular o tu computadora. Si quieres, la agregas a tu pantalla de inicio y se usa como cualquier app.",
-  ],
-  [
-    "¿Necesito crear una cuenta?",
-    "Para empezar, no: puedes escanear y guardar hasta 3 plantas sin cuenta. Para guardar más o reservar un mantenimiento, entras con Google o con tu correo.",
-  ],
-  [
-    "¿Qué incluye el mantenimiento?",
-    "Revisión de cada planta, riego, poda ligera, limpieza de hojas y revisión de plagas. En jardines medianos y grandes también abono y cambio de tierra ligero.",
-  ],
-  [
-    "¿Cuánto cuesta?",
-    `Depende del tamaño de tu jardín: ${tamanos.map((t) => `${t.nombre.toLowerCase()} ${formatoPrecio(t.precio)}`).join(", ")} (MXN, impuestos incluidos).`,
-  ],
-  ["¿Dónde dan servicio?", `En la Ciudad de México: ${zonas.join(", ")}. Si no ves tu colonia, escríbenos por WhatsApp.`],
-  ["¿Atienden jardines verticales?", "Sí. Si ya tienes uno, elige el tamaño grande al reservar. Si quieres uno nuevo, escríbenos por WhatsApp y te mandamos una propuesta."],
-  ["¿Cómo pago?", "En línea, con tarjeta de crédito o débito. Si tu visita es en 3 días o más, también puedes pagar en efectivo en OXXO."],
-  [
-    "¿Puedo cambiar o cancelar mi cita?",
-    "Sí, desde la app. Cambiar la fecha no cuesta nada hasta 24 horas antes. Si cancelas con 48 horas o más de anticipación te devolvemos todo tu pago.",
-  ],
-  [
-    "¿Qué tan exacta es la identificación?",
-    "Muy buena con fotos claras de la hoja y la planta completa, pero es inteligencia artificial y puede equivocarse. Tómala como una guía.",
-  ],
-];
+export default function Presentacion({
+  tamanos = tamanosConPrecios(null),
+  zonas = ZONAS_INICIALES,
+  sitio = "https://ambitat.vercel.app",
+  diasVisita = AGENDA_INICIAL.diasSemana,
+}) {
+  // Español primero; el inglés se elige con el botón ES / EN (y se recuerda).
+  const [idioma, setIdioma] = useState("es");
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("ambitat-idioma") === "en") setIdioma("en");
+    } catch {}
+  }, []);
+  useEffect(() => {
+    document.documentElement.lang = idioma === "en" ? "en" : "es-MX";
+  }, [idioma]);
+  function cambiarIdioma(nuevo) {
+    setIdioma(nuevo);
+    try {
+      localStorage.setItem("ambitat-idioma", nuevo);
+    } catch {}
+  }
 
-export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas = ZONAS_INICIALES, sitio = "https://ambitat.vercel.app" }) {
-  const preguntas = PREGUNTAS(tamanos, zonas);
-  const minimo = Math.min(...tamanos.map((t) => t.precio));
-  const maximo = Math.max(...tamanos.map((t) => t.precio));
-  const titulo = "Ámbitat · Cuidado de plantas en CDMX: app gratis y mantenimiento a domicilio";
-  const descripcion = `Identifica tus plantas con una foto y recibe avisos de riego gratis. Y si quieres que alguien las cuide, vamos a tu casa en la Ciudad de México desde ${formatoPrecio(minimo)}.`;
+  const t = TEXTOS[idioma];
+  const dias = diasDeVisita(diasVisita, idioma);
+  const preguntas = t.preguntas({ tamanos, zonas, dias });
+  const minimo = Math.min(...tamanos.map((x) => x.precio));
+  const maximo = Math.max(...tamanos.map((x) => x.precio));
+  // Para Google siempre en español (es la versión principal).
+  const es = TEXTOS.es;
+  const descripcionEs = es.descripcion(minimo);
   const [conSombra, setConSombra] = useState(false);
   useEffect(() => {
     const alBajar = () => setConSombra(window.scrollY > 8);
@@ -233,7 +195,7 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
     "@type": "LocalBusiness",
     "@id": `${sitio}/#negocio`,
     name: "Ámbitat",
-    description: descripcion,
+    description: descripcionEs,
     url: `${sitio}/`,
     logo: `${sitio}/icon-512.png`,
     image: `${sitio}/icon-512.png`,
@@ -242,32 +204,33 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
     priceRange: `${formatoPrecio(minimo)} – ${formatoPrecio(maximo)} MXN`,
     address: { "@type": "PostalAddress", addressLocality: "Ciudad de México", addressCountry: "MX" },
     areaServed: [{ "@type": "City", name: "Ciudad de México" }, ...zonas.filter((z) => z !== "Ciudad de México").map((z) => ({ "@type": "Place", name: `${z}, Ciudad de México` }))],
-    makesOffer: tamanos.map((t) => ({
+    makesOffer: tamanos.map((x) => ({
       "@type": "Offer",
-      name: `Mantenimiento de plantas · jardín ${t.nombre.toLowerCase()}`,
-      price: (t.precio / 100).toFixed(2),
+      name: `Mantenimiento de plantas · ${nombreTamano(x, "es").toLowerCase()}`,
+      price: (x.precio / 100).toFixed(2),
       priceCurrency: "MXN",
-      description: t.incluye.join(". "),
+      description: x.incluye.join(". "),
     })),
   };
   const datosPreguntas = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: preguntas.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
+    mainEntity: es.preguntas({ tamanos, zonas, dias: diasDeVisita(diasVisita, "es") }).map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
   };
 
   return (
     <>
       <Head>
-        <title>{titulo}</title>
-        <meta name="description" content={descripcion} />
+        <title>{es.tituloPagina}</title>
+        <meta name="description" content={descripcionEs} />
         <link rel="canonical" href={`${sitio}/`} />
         <meta property="og:type" content="website" />
-        <meta property="og:title" content={titulo} />
-        <meta property="og:description" content={descripcion} />
+        <meta property="og:title" content={es.tituloPagina} />
+        <meta property="og:description" content={descripcionEs} />
         <meta property="og:url" content={`${sitio}/`} />
         <meta property="og:image" content={`${sitio}/icon-512.png`} />
         <meta property="og:locale" content="es_MX" />
+        <meta property="og:locale:alternate" content="en_US" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet" />
@@ -276,74 +239,72 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
       </Head>
       <style>{ESTILOS}</style>
 
-      <div className="cn">
+      <div className="cn" lang={idioma === "en" ? "en" : "es-MX"}>
         <header className={"cn-barra" + (conSombra ? " cn-barra-sombra" : "")}>
           <div className="cn-barra-in">
-            <a href="/conoce" className="cn-logo" aria-label="Ámbitat, inicio">
+            <a href="/conoce" className="cn-logo" aria-label="Ámbitat">
               <img src="/logo.png" alt="Ámbitat" />
             </a>
-            <nav className="cn-menu" aria-label="Secciones de la página">
-              <a href="#mantenimiento">Mantenimiento</a>
-              <a href="#la-app">La app</a>
-              <a href="#verticales">Jardines verticales</a>
-              <a href="#preguntas">Preguntas</a>
+            <nav className="cn-menu" aria-label={idioma === "en" ? "Page sections" : "Secciones de la página"}>
+              {t.menu.map(([href, texto]) => (
+                <a key={href} href={href}>
+                  {texto}
+                </a>
+              ))}
             </nav>
-            <a href="/app" className="cn-boton cn-boton-chico">
-              Abrir la app
-            </a>
+            <div className="cn-barra-der">
+              <div className="cn-idioma" role="group" aria-label="Idioma / Language">
+                <button aria-pressed={idioma === "es"} onClick={() => cambiarIdioma("es")} lang="es">
+                  ES
+                </button>
+                <button aria-pressed={idioma === "en"} onClick={() => cambiarIdioma("en")} lang="en">
+                  EN
+                </button>
+              </div>
+              <a href="/app" className="cn-boton cn-boton-chico">
+                {t.abrirApp}
+              </a>
+            </div>
           </div>
         </header>
 
         {/* ---------- Portada con la demo ---------- */}
         <section className="cn-portada">
           <div className="cn-portada-texto">
-            <h1>Tus plantas, bien cuidadas. En tu casa o con tu celular.</h1>
-            <p className="cn-entrada">
-              Toma una foto y la app te dice qué planta es, cómo cuidarla y cuándo regarla. Y si prefieres que alguien lo haga por ti,
-              vamos a tu casa en la Ciudad de México.
-            </p>
+            <h1>{t.h1}</h1>
+            <p className="cn-entrada">{t.entrada}</p>
             <div className="cn-acciones">
               <a href="/app" className="cn-boton">
-                Abrir la app gratis
+                {t.abrirAppGratis}
               </a>
               <a href="#mantenimiento" className="cn-boton cn-boton-claro">
-                Ver el mantenimiento
+                {t.verMantenimiento}
               </a>
             </div>
-            <p className="cn-nota">Sin descargar nada. Funciona en celular y en computadora.</p>
+            <p className="cn-nota">{t.nota}</p>
           </div>
-          <DemoTelefono />
+          <DemoTelefono t={t} idioma={idioma} />
         </section>
 
         {/* ---------- La app ---------- */}
         <section className="cn-app" id="la-app">
           <div className="cn-ancho">
-            <h2>Una app que se acuerda por ti</h2>
+            <h2>{t.appTitulo}</h2>
             <div className="cn-app-filas">
-              <div className="cn-app-fila">
-                <span className="cn-icono" aria-hidden="true">📸</span>
-                <div>
-                  <h3>Escanea cualquier planta</h3>
-                  <p>Su nombre, cuánta luz y agua necesita, si es tóxica para tus mascotas y qué plagas vigilar.</p>
+              {t.appFilas.map(([icono, titulo, texto]) => (
+                <div className="cn-app-fila" key={titulo}>
+                  <span className="cn-icono" aria-hidden="true">
+                    {icono}
+                  </span>
+                  <div>
+                    <h3>{titulo}</h3>
+                    <p>{texto}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="cn-app-fila">
-                <span className="cn-icono" aria-hidden="true">💧</span>
-                <div>
-                  <h3>Avisos de riego y del clima</h3>
-                  <p>Te llega un aviso el día que le toca agua, y otro cuando viene frío, calor o lluvia fuerte en la ciudad.</p>
-                </div>
-              </div>
-              <div className="cn-app-fila">
-                <span className="cn-icono" aria-hidden="true">🛋️</span>
-                <div>
-                  <h3>Tu jardín por cuartos</h3>
-                  <p>Agrupa tus plantas por sala, balcón u oficina y riega todo un cuarto de un toque.</p>
-                </div>
-              </div>
+              ))}
             </div>
             <a href="/app" className="cn-boton">
-              Empezar con mi primera planta
+              {t.empezar}
             </a>
           </div>
         </section>
@@ -351,58 +312,54 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
         {/* ---------- Mantenimiento ---------- */}
         <section className="cn-servicio" id="mantenimiento">
           <div className="cn-ancho">
-            <h2>Mantenimiento a domicilio</h2>
-            <p className="cn-sub">Llegamos a la hora que elijas y revisamos planta por planta. Pagas en línea al reservar, con tarjeta o en OXXO.</p>
+            <h2>{t.mantTitulo}</h2>
+            <p className="cn-sub">{t.mantSub(dias)}</p>
             <div className="cn-precios">
-              {tamanos.map((t, i) => (
-                <article key={t.key} className={"cn-precio" + (i === 1 ? " cn-precio-medio" : "")}>
-                  <h3>Jardín {t.nombre.toLowerCase()}</h3>
+              {tamanos.map((x, i) => (
+                <article key={x.key} className={"cn-precio" + (i === 1 ? " cn-precio-medio" : "")}>
+                  <h3>{nombreTamano(x, idioma)}</h3>
                   <p className="cn-monto">
-                    {formatoPrecio(t.precio)} <span>MXN</span>
+                    {formatoPrecio(x.precio)} <span>MXN</span>
                   </p>
                   <ul>
-                    {t.incluye.map((l) => (
-                      <li key={l}>{l}</li>
+                    {x.incluye.map((l) => (
+                      <li key={l}>{textoIncluye(l, idioma)}</li>
                     ))}
                   </ul>
                 </article>
               ))}
             </div>
             <ol className="cn-pasos-reserva">
-              <li>
-                <span>
-                  <strong>Abre la app y entra a Tienda.</strong> Elige el tamaño de tu jardín.
-                </span>
-              </li>
-              <li>
-                <span>
-                  <strong>Escoge fecha y hora.</strong> El calendario solo te enseña días con lugar.
-                </span>
-              </li>
-              <li>
-                <span>
-                  <strong>Paga y listo.</strong> Te llega la confirmación y puedes cambiar o cancelar desde la app.
-                </span>
-              </li>
+              {t.pasos.map(([fuerte, resto]) => (
+                <li key={fuerte}>
+                  <span>
+                    <strong>{fuerte}</strong> {resto}
+                  </span>
+                </li>
+              ))}
             </ol>
             <a href="/app?ir=tienda" className="cn-boton cn-boton-crema">
-              Reservar mi visita
+              {t.reservar}
             </a>
           </div>
         </section>
 
-        {/* ---------- Jardines verticales (cuando tengas fotos reales, ponlas de fondo aquí) ---------- */}
-        <section className="cn-verticales" id="verticales">
+        {/* ---------- Casas y negocios ---------- */}
+        <section className="cn-publicos" id="casas-y-negocios">
           <div className="cn-ancho">
-            <div className="cn-verticales-caja">
-              <h2>Jardines verticales</h2>
-              <p>
-                Un muro verde cambia por completo una sala, una terraza o una oficina. Cuéntanos de tu espacio (medidas, luz y una foto) y
-                te mandamos una propuesta. También damos mantenimiento a los que ya existen.
-              </p>
-              <a href={enlaceWhatsApp(MENSAJE_VERTICAL)} className="cn-boton cn-boton-crema" target="_blank" rel="noopener">
-                Cotizar por WhatsApp
-              </a>
+            <h2>{t.publicosTitulo}</h2>
+            <div className="cn-publicos-grid">
+              <div className="cn-publico cn-casa">
+                <h3>{t.casaTitulo}</h3>
+                <p>{t.casaTexto}</p>
+              </div>
+              <div className="cn-publico cn-negocio">
+                <h3>{t.negocioTitulo}</h3>
+                <p>{t.negocioTexto}</p>
+                <a href={enlaceWhatsApp(t.mensajeNegocio)} className="cn-boton cn-boton-crema" target="_blank" rel="noopener">
+                  {t.negocioBoton}
+                </a>
+              </div>
             </div>
           </div>
         </section>
@@ -410,16 +367,16 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
         {/* ---------- Zonas ---------- */}
         <section className="cn-zonas">
           <div className="cn-ancho">
-            <h2>Dónde damos servicio</h2>
+            <h2>{t.zonasTitulo}</h2>
             <ul className="cn-chips">
               {zonas.map((z) => (
                 <li key={z}>{z}</li>
               ))}
             </ul>
             <p className="cn-sub">
-              ¿No ves tu colonia?{" "}
-              <a href={enlaceWhatsApp(MENSAJE_WA)} target="_blank" rel="noopener">
-                Pregúntanos por WhatsApp
+              {t.noVesTuColonia}{" "}
+              <a href={enlaceWhatsApp(t.mensajeWa)} target="_blank" rel="noopener">
+                {t.preguntanos}
               </a>
               .
             </p>
@@ -429,7 +386,7 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
         {/* ---------- Preguntas ---------- */}
         <section className="cn-preguntas" id="preguntas">
           <div className="cn-ancho">
-            <h2>Preguntas frecuentes</h2>
+            <h2>{t.preguntasTitulo}</h2>
             {preguntas.map(([q, a]) => (
               <details key={q}>
                 <summary>{q}</summary>
@@ -442,12 +399,12 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
         <footer className="cn-pie">
           <div className="cn-ancho cn-pie-grid">
             <div>
-              <p className="cn-pie-grande">¿Tienes una planta que no sabes cómo cuidar?</p>
+              <p className="cn-pie-grande">{t.pieGrande}</p>
               <div className="cn-acciones">
                 <a href="/app" className="cn-boton cn-boton-crema">
-                  Abrir la app gratis
+                  {t.abrirAppGratis}
                 </a>
-                <a href={enlaceWhatsApp(MENSAJE_WA)} className="cn-boton cn-boton-borde" target="_blank" rel="noopener">
+                <a href={enlaceWhatsApp(t.mensajeWa)} className="cn-boton cn-boton-borde" target="_blank" rel="noopener">
                   WhatsApp {R.telefono}
                 </a>
               </div>
@@ -458,9 +415,9 @@ export default function Presentacion({ tamanos = tamanosConPrecios(null), zonas 
             <p className="cn-legal">
               <a href={`mailto:${R.correo}`}>{R.correo}</a>
               <span aria-hidden="true"> / </span>
-              <a href="/terminos">Términos y condiciones</a>
+              <a href="/terminos">{t.terminos}</a>
               <span aria-hidden="true"> / </span>
-              <a href="/privacidad">Aviso de privacidad</a>
+              <a href="/privacidad">{t.privacidad}</a>
             </p>
           </div>
         </footer>
@@ -495,15 +452,20 @@ html, body { margin: 0; background: var(--oro); }
 .cn-barra-sombra { box-shadow: 0 1px 0 rgba(34,28,19,0.08), 0 10px 30px -18px rgba(34,28,19,0.35); }
 .cn-barra-in { display: flex; justify-content: space-between; align-items: center; gap: 16px; max-width: 1120px; margin: 0 auto; padding: 12px 20px; }
 .cn-logo img { height: 32px; width: auto; display: block; }
+@media (max-width: 380px) { .cn-logo img { height: 26px; } .cn-barra-in { gap: 8px; padding: 12px 16px; } }
+.cn-barra-der { display: flex; align-items: center; gap: 10px; }
+.cn-idioma { display: flex; border: 1.5px solid rgba(34,28,19,.35); border-radius: 999px; overflow: hidden; }
+.cn-idioma button { border: none; background: transparent; font-family: inherit; font-weight: 700; font-size: 12.5px; padding: 6px 9px; cursor: pointer; color: var(--tinta); }
+.cn-idioma button[aria-pressed="true"] { background: var(--tinta); color: var(--crema); }
 .cn-menu { display: none; gap: 26px; font-weight: 600; font-size: 15px; }
 .cn-menu a { text-decoration: none; opacity: .8; }
 .cn-menu a:hover { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
 
 /* Botones */
-.cn-boton { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 0 24px; border-radius: 999px; background: var(--pino); color: #fff !important; font-weight: 700; font-size: 16px; text-decoration: none; border: 2px solid var(--pino); transition: background .15s, transform .15s; cursor: pointer; font-family: inherit; }
+.cn-boton { display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 0 24px; border-radius: 999px; background: var(--pino); color: #fff !important; font-weight: 700; font-size: 16px; text-decoration: none; border: 2px solid var(--pino); transition: background .15s, transform .15s; cursor: pointer; font-family: inherit; text-align: center; }
 .cn-boton:hover { background: var(--pino-hondo); border-color: var(--pino-hondo); }
 .cn-boton:active { transform: scale(0.97); }
-.cn-boton-chico { min-height: 40px; padding: 0 16px; font-size: 14px; }
+.cn-boton-chico { min-height: 40px; padding: 0 14px; font-size: 14px; white-space: nowrap; }
 .cn-boton-claro { background: transparent; color: var(--tinta) !important; border-color: var(--tinta); }
 .cn-boton-claro:hover { background: rgba(34,28,19,0.06); border-color: var(--tinta); }
 .cn-boton-crema { background: var(--crema); color: var(--pino-hondo) !important; border-color: var(--crema); }
@@ -598,10 +560,17 @@ html, body { margin: 0; background: var(--oro); }
 .cn-pasos-reserva li > span { padding-top: 8px; }
 .cn-pasos-reserva strong { color: var(--crema); display: block; }
 
-/* Jardines verticales: la foto ocupa todo */
-.cn-verticales { position: relative; padding: 120px 0; background: #24401f url(/muro-hojas.svg) 0 0 / 200px 200px repeat; }
-.cn-verticales-caja { background: rgba(34,28,19,.78); color: var(--crema); border-radius: 28px; padding: 30px 26px; max-width: 520px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.cn-verticales-caja p { font-size: 17px; line-height: 1.55; margin: 14px 0 24px; color: #e6dcc0; }
+
+/* Casas y negocios */
+.cn-publicos { padding: 70px 0 20px; }
+.cn-publicos-grid { display: grid; gap: 14px; margin-top: 28px; }
+.cn-publico { border-radius: 28px; padding: 26px 24px; }
+.cn-publico h3 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 10px; font-weight: 800; }
+.cn-publico p { font-size: 16.5px; line-height: 1.55; margin: 0; max-width: 34em; }
+.cn-casa { background: var(--crema); }
+.cn-casa p { color: #3a3122; }
+.cn-negocio { background: var(--madera); color: var(--crema); }
+.cn-negocio p { color: #f1e4c8; margin-bottom: 22px; }
 
 /* Zonas */
 .cn-zonas { padding: 70px 0 56px; }
@@ -637,14 +606,14 @@ html, body { margin: 0; background: var(--oro); }
   .cn-pasos-reserva { grid-template-columns: repeat(3, 1fr); gap: 24px; }
   .cn-app-filas { grid-template-columns: repeat(3, 1fr); gap: 28px; }
   .cn-app-fila { grid-template-columns: 1fr; border-bottom: none; }
-  .cn-verticales { padding: 170px 0; background-attachment: fixed; }
   .cn-pie-grid { grid-template-columns: 1fr auto; }
   .cn-pie-arbol { display: block; }
+  .cn-publicos-grid { grid-template-columns: 1fr 1fr; }
+  .cn-publico { padding: 34px 32px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .dm-telefono { transform: none; transition: none; }
   .dm *, .cn-boton { animation: none !important; transition: none !important; }
-  .cn-verticales { background-attachment: scroll; }
 }
 `;

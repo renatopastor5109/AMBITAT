@@ -24,7 +24,7 @@ export async function getServerSideProps({ req, res, query }) {
 // de iniciar sesión), se va directo a la app sin enseñar la web.
 const SCRIPT_REGRESO = `(function(){try{
 var h=location.hash||"";
-var ya=localStorage.getItem("ambitat-intro-vista")||localStorage.getItem("ambitat-bienvenida-vista");
+var ya=localStorage.getItem("ambitat-bienvenida-vista");
 if(!ya){for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i)||"";if(k.indexOf("sb-")===0&&k.indexOf("auth-token")>-1){ya=1;break;}}}
 if(ya||h.indexOf("access_token")>-1||h.indexOf("error_description")>-1){location.replace("/app"+location.search+h);}
 }catch(e){}})();`;

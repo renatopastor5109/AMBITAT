@@ -55,8 +55,8 @@ export default function Terminos({ tamanos = tamanosConPrecios(null) }) {
             México.
           </li>
           <li>
-            <strong>Mantenimiento a domicilio (con costo):</strong> visitas para cuidar tus plantas y jardines, incluidos los
-            jardines verticales.
+            <strong>Mantenimiento a domicilio (con costo):</strong> visitas para cuidar tus plantas, en tu casa o en tu
+            negocio.
           </li>
         </ul>
       </Seccion>

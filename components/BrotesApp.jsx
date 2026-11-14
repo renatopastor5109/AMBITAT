@@ -6,6 +6,7 @@ import { diaCDMX, diasEntre, esFinDeSemana, diasParaRiego, diasDesdeUltimaFoto, 
 import { politicaCancelacion, puedeCambiarFecha, horasParaLaCita } from "../lib/politicaCancelacion";
 import { tipsDelDia } from "../lib/tips";
 import { consejoDeTemporada } from "../lib/temporadas";
+import { limpiarCodigo } from "../lib/cupones";
 
 // ---- Design tokens (misma estructura tipo Salud/Clima, con tu paleta cálida original) ----
 const C = {
@@ -3425,11 +3426,16 @@ export default function BrotesApp() {
           hora: reservaHora,
           direccion: reservaDireccion,
           notas: reservaNotas,
+          cupon: cuponAplicado?.codigo || undefined,
         }),
       });
       const data = await response.json().catch(() => ({}));
       // El precio cambió mientras reservaba: se muestra el nuevo antes de cobrar.
       if (data.precioNuevo) cargarDisponibilidad();
+      if (data.cuponInvalido) {
+        setCuponAplicado(null);
+        setCuponError(data.error);
+      }
       if (!response.ok || !data.url) throw new Error(data.error || "No pudimos iniciar el pago.");
       window.location.href = data.url; // redirige a Stripe Checkout (tarjeta u OXXO)
     } catch (err) {
@@ -3600,6 +3606,41 @@ export default function BrotesApp() {
   // ---------- Invita a un amigo ----------
   const [referidos, setReferidos] = useState(null); // { codigo, link, creditoDisponible, amigosInvitados, ... }
   const [descuentoReserva, setDescuentoReserva] = useState(null); // { total, bienvenida } para el tamaño elegido
+  // Código de descuento (los creas en /admin → Descuentos)
+  const [cuponAbierto, setCuponAbierto] = useState(false);
+  const [cuponTexto, setCuponTexto] = useState("");
+  const [cuponAplicado, setCuponAplicado] = useState(null); // { codigo, monto, descripcion }
+  const [cuponCargando, setCuponCargando] = useState(false);
+  const [cuponError, setCuponError] = useState(null);
+  async function aplicarCupon(texto = cuponTexto) {
+    const codigo = limpiarCodigo(texto);
+    if (!codigo) return;
+    setCuponCargando(true);
+    setCuponError(null);
+    try {
+      const token = await tokenSesion();
+      const r = await fetch(`/api/cupon?codigo=${encodeURIComponent(codigo)}&tamano=${encodeURIComponent(reservaTamano || "")}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "No se pudo revisar el código.");
+      setCuponAplicado(d);
+      setCuponTexto(d.codigo);
+    } catch (e) {
+      setCuponAplicado(null);
+      setCuponError(e.message);
+    }
+    setCuponCargando(false);
+  }
+  function quitarCupon() {
+    setCuponAplicado(null);
+    setCuponTexto("");
+    setCuponError(null);
+  }
+  // Si cambia el tamaño, el descuento se vuelve a calcular.
+  useEffect(() => {
+    if (cuponAplicado) aplicarCupon(cuponAplicado.codigo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservaTamano]);
+  const descuentoTotal = (descuentoReserva?.total || 0) + (cuponAplicado?.monto || 0);
   async function cargarReferidos(tamano) {
     try {
       const token = await tokenSesion();
@@ -3636,6 +3677,10 @@ export default function BrotesApp() {
     setReservaError(null);
     setTiendaPaso("inicio");
     setReservaTamano(null);
+    setCuponAplicado(null);
+    setCuponTexto("");
+    setCuponAbierto(false);
+    setCuponError(null);
     setReservaDetalle(null);
     setTicket(null);
     setPagoStatus(null);
@@ -4152,6 +4197,8 @@ export default function BrotesApp() {
 
   // ---------- Bienvenida de 3 pantallas (solo la primera vez) ----------
   const [primeraVez, setPrimeraVez] = useState(false);
+  // Cómo llegó (antes de limpiar la dirección): con ?ir= o ?pago= va directo a lo que buscaba.
+  const busquedaInicial = useRef(typeof window !== "undefined" ? window.location.search : "");
   useEffect(() => {
     if (authEstado !== "lista" || loadingGarden || gardenError) return;
     let vista = false;
@@ -4160,7 +4207,8 @@ export default function BrotesApp() {
       // Quien ya tiene plantas ya sabe cómo funciona: no se le enseña.
       if (!vista && garden.length > 0) localStorage.setItem("ambitat-bienvenida-vista", "1");
     } catch {}
-    if (!vista && garden.length === 0 && !window.location.search.includes("pago=")) setPrimeraVez(true);
+    const vaDirecto = /[?&](pago|ir)=/.test(busquedaInicial.current) || /[?&]pago=/.test(window.location.search);
+    if (!vista && garden.length === 0 && !vaDirecto) setPrimeraVez(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authEstado, loadingGarden, gardenError]);
   function terminarPrimeraVez(accion) {
@@ -5618,16 +5666,22 @@ export default function BrotesApp() {
                       {disponibilidadCargando ? (
                         <Esqueleto enLinea w={92} h={16} style={{ verticalAlign: "middle" }} />
                       ) : tiendaPaso === "datos" && tamanoElegido ? (
-                        `${formatoPrecio(tamanoElegido.precio - (descuentoReserva?.total || 0))} MXN`
+                        `${formatoPrecio(tamanoElegido.precio - descuentoTotal)} MXN`
                       ) : (
                         `Desde ${formatoPrecio(precioDesde)}`
                       )}
                     </p>
                   </div>
-                  {tiendaPaso === "datos" && tamanoElegido && descuentoReserva?.total > 0 && (
-                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.green, fontWeight: 700, margin: "0 0 4px" }}>
+                  {tiendaPaso === "datos" && tamanoElegido && descuentoTotal > 0 && (
+                    <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.green, fontWeight: 700, margin: "0 0 4px", lineHeight: 1.5 }}>
                       🎁 <span style={{ textDecoration: "line-through", color: C.inkSoft, fontWeight: 500 }}>{formatoPrecio(tamanoElegido.precio)}</span>{" "}
-                      {descuentoReserva.bienvenida > 0 ? "Descuento de bienvenida por invitación" : "Usando tu crédito por invitar amigos"}: −{formatoPrecio(descuentoReserva.total)}
+                      {[
+                        descuentoReserva?.total > 0 &&
+                          `${descuentoReserva.bienvenida > 0 ? "Bienvenida por invitación" : "Tu crédito por invitar amigos"}: −${formatoPrecio(descuentoReserva.total)}`,
+                        cuponAplicado && `Código ${cuponAplicado.codigo}: −${formatoPrecio(cuponAplicado.monto)}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   )}
                   <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: C.inkSoft, margin: "0 0 4px", lineHeight: 1.4 }}>
@@ -5795,11 +5849,56 @@ export default function BrotesApp() {
                       </div>
 
 
+                      {/* Código de descuento */}
+                      <div style={{ marginTop: 10 }}>
+                        {cuponAplicado ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(63,93,62,0.1)", borderRadius: 12, padding: "10px 12px" }}>
+                            <span aria-hidden="true">🏷️</span>
+                            <p style={{ flex: 1, margin: 0, fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.green, fontWeight: 700 }}>
+                              {cuponAplicado.codigo} · {cuponAplicado.descripcion} (−{formatoPrecio(cuponAplicado.monto)})
+                            </p>
+                            <button onClick={quitarCupon} style={{ background: "none", border: "none", color: C.inkSoft, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: 4 }}>
+                              Quitar
+                            </button>
+                          </div>
+                        ) : !cuponAbierto ? (
+                          <button onClick={() => setCuponAbierto(true)} style={{ background: "none", border: "none", padding: "4px 0", color: C.green, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                            ¿Tienes un código de descuento?
+                          </button>
+                        ) : (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              aplicarCupon();
+                            }}
+                            style={{ display: "flex", gap: 8 }}
+                          >
+                            <input
+                              value={cuponTexto}
+                              onChange={(e) => {
+                                setCuponTexto(e.target.value.toUpperCase());
+                                setCuponError(null);
+                              }}
+                              placeholder="Código"
+                              aria-label="Código de descuento"
+                              autoCapitalize="characters"
+                              autoComplete="off"
+                              maxLength={24}
+                              style={{ flex: 1, minWidth: 0, border: "1px solid " + C.cardLine, borderRadius: 10, padding: "10px 12px", fontFamily: "'Inter', sans-serif", fontSize: 15, letterSpacing: 1, color: C.ink, background: C.tileBg }}
+                            />
+                            <button type="submit" disabled={!cuponTexto.trim() || cuponCargando} style={{ padding: "0 16px", borderRadius: 10, border: "none", background: cuponTexto.trim() ? C.green : C.cardLine, color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}>
+                              {cuponCargando ? "..." : "Aplicar"}
+                            </button>
+                          </form>
+                        )}
+                        {cuponError && <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "6px 0 0" }}>{cuponError}</p>}
+                      </div>
+
                       {reservaError && (
                         <p style={{ color: C.red, fontFamily: "'Inter', sans-serif", fontSize: 12.5, margin: "10px 0 0" }}>{reservaError}</p>
                       )}
                       {botonPrincipal(
-                        reservando ? "Preparando pago..." : `Reservar y pagar ${tamanoElegido ? formatoPrecio(tamanoElegido.precio - (descuentoReserva?.total || 0)) : ""}`,
+                        reservando ? "Preparando pago..." : `Reservar y pagar ${tamanoElegido ? formatoPrecio(tamanoElegido.precio - descuentoTotal) : ""}`,
                         reservarYPagar,
                         reservando || cargandoHoras || (reservaFecha && !horariosActivos.includes(reservaHora)) || horasOcupadas.includes(reservaHora)
                       )}

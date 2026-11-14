@@ -11,6 +11,7 @@ import Inicio from "../components/admin/Inicio";
 import Clientes from "../components/admin/Clientes";
 import Buzon from "../components/admin/Buzon";
 import Comunicar from "../components/admin/Comunicar";
+import Descuentos from "../components/admin/Descuentos";
 import { MAX_MENSAJE_PAUSA } from "../lib/agenda";
 
 
@@ -76,7 +77,7 @@ export default function Admin() {
   const [reservaciones, setReservaciones] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
-  const [vista, setVista] = useState("inicio"); // inicio | calendario | proximas | historial | clientes | comunicar | buzon | agenda | crecer | ajustes
+  const [vista, setVista] = useState("inicio"); // inicio | calendario | proximas | historial | clientes | descuentos | comunicar | buzon | agenda | crecer | ajustes
   const [agenda, setAgenda] = useState(null);
   const [agendaError, setAgendaError] = useState(null);
   const [precios, setPrecios] = useState(null);
@@ -328,6 +329,7 @@ export default function Admin() {
                 ["proximas", `Próximas${resumen.proximas ? ` (${resumen.proximas})` : ""}`],
                 ["historial", "Historial"],
                 ["clientes", "Clientes"],
+                ["descuentos", "Descuentos"],
                 ["comunicar", "Comunicar"],
                 ["buzon", "Buzón"],
                 ["agenda", "Servicio"],
@@ -363,6 +365,8 @@ export default function Admin() {
               <Inicio password={password} citasHoy={reservaciones.filter((r) => r.fecha === hoy && r.estado === "pagado").sort((a, b) => horaAMinutos(a.hora) - horaAMinutos(b.hora))} alIr={setVista} />
             ) : vista === "clientes" ? (
               <Clientes password={password} />
+            ) : vista === "descuentos" ? (
+              <Descuentos password={password} />
             ) : vista === "comunicar" ? (
               <Comunicar password={password} />
             ) : vista === "buzon" ? (

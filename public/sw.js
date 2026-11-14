@@ -29,7 +29,12 @@ self.addEventListener("notificationclick", function (event) {
       for (const v of ventanas) {
         if ("focus" in v) {
           // Si el aviso lleva a una sección (ej. /?ir=tienda), la abre ahí.
-          if (url !== "/" && "navigate" in v) return v.navigate(url).then((w) => (w || v).focus());
+          if (url !== "/" && "navigate" in v) {
+            return v
+              .navigate(url)
+              .then((w) => (w || v).focus())
+              .catch(() => clients.openWindow(url)); // ventana que no controla el SW
+          }
           return v.focus();
         }
       }

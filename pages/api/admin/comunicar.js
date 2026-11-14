@@ -72,8 +72,15 @@ export default async function handler(req, res) {
       const { data: registro, error: errReg } = await admin.from("avisos_enviados").insert({ titulo, texto, url }).select("id").single();
       if (errReg) throw errReg;
 
-      webpush.setVapidDetails(process.env.VAPID_SUBJECT || `mailto:${RESPONSABLE.correo}`, process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-      const subs = await todasLasFilas(() => admin.from("push_subscriptions").select("id, subscription").order("id"));
+      let subs;
+      try {
+        webpush.setVapidDetails(process.env.VAPID_SUBJECT || `mailto:${RESPONSABLE.correo}`, process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+        subs = await todasLasFilas(() => admin.from("push_subscriptions").select("id, subscription").order("id"));
+      } catch (err) {
+        // No se mandó nada: se borra el registro para que puedas intentar otra vez.
+        await admin.from("avisos_enviados").delete().eq("id", registro.id);
+        throw err;
+      }
       const carga = JSON.stringify({ title: titulo, body: texto, url });
       let enviados = 0;
       let fallidos = 0;

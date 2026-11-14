@@ -10,6 +10,8 @@ import { obtenerUsuario, clienteAdmin } from "../../lib/usuarioServidor";
 import { obtenerHorasOcupadas, horaGanadaPorOtra, apartaHorario } from "../../lib/horariosOcupados";
 import { obtenerAgenda, obtenerPrecios } from "../../lib/agendaServidor";
 import { calcularDescuento } from "../../lib/referidosServidor";
+import { validarCupon } from "../../lib/cuponesServidor";
+import { COBRO_MINIMO_CENTAVOS } from "../../lib/crecimiento";
 import { actualizarConExtras } from "../../lib/columnasOpcionales";
 import { diaPermitido } from "../../lib/agenda";
 import { tamanoPorClave, formatoPrecio, DIAS_MAXIMOS_ANTICIPACION } from "../../lib/servicio";
@@ -100,7 +102,14 @@ export default async function handler(req, res) {
 
     // Descuentos de "Invita a un amigo" (bienvenida y créditos ganados).
     const descuento = await calcularDescuento(admin, usuario.id, tamano.precio);
-    const total = tamano.precio - descuento.total;
+    // Código de descuento (de /admin → Descuentos). Si no sirve, se avisa antes de cobrar.
+    let cupon = null;
+    if (typeof body.cupon === "string" && body.cupon.trim()) {
+      const maximo = tamano.precio - descuento.total - COBRO_MINIMO_CENTAVOS;
+      cupon = await validarCupon(admin, body.cupon, usuario.id, tamano.precio, maximo);
+      if (!cupon.ok) return res.status(400).json({ error: cupon.error, cuponInvalido: true });
+    }
+    const total = tamano.precio - descuento.total - (cupon?.monto || 0);
 
     // ---------- Guarda la reservación (el precio lo pone el servidor) ----------
     const fila = {
@@ -116,7 +125,10 @@ export default async function handler(req, res) {
       precio_centavos: total, // lo que de verdad se cobra (con descuento)
       estado: "pendiente_pago",
     };
-    const extrasDescuento = descuento.total > 0 ? { descuento_centavos: descuento.total, creditos_usados: descuento.creditos } : {};
+    const extrasDescuento = {
+      ...(descuento.total > 0 ? { descuento_centavos: descuento.total, creditos_usados: descuento.creditos } : {}),
+      ...(cupon ? { cupon: cupon.codigo, descuento_cupon_centavos: cupon.monto } : {}),
+    };
     const { data: reservacion, error: insertError } = await actualizarConExtras(
       (campos) => admin.from("reservaciones").insert(campos).select().single(),
       fila,
@@ -165,7 +177,8 @@ export default async function handler(req, res) {
                 name: `Mantenimiento de plantas · Jardín ${tamano.nombre.toLowerCase()} — Ámbitat`,
                 description:
                   `Visita el ${fecha} a las ${hora}` +
-                  (reservacion.descuento_centavos ? ` · Incluye ${formatoPrecio(reservacion.descuento_centavos)} de descuento por invitación` : ""),
+                  (reservacion.descuento_centavos ? ` · Incluye ${formatoPrecio(reservacion.descuento_centavos)} de descuento por invitación` : "") +
+                  (cupon ? ` · Código ${cupon.codigo}: −${formatoPrecio(cupon.monto)}` : ""),
               },
             },
             quantity: 1,

@@ -5,7 +5,7 @@ import { esSlugValido } from "../../lib/crecimiento";
 export async function getServerSideProps({ params }) {
   const slug = String(params.slug || "").toLowerCase();
   return {
-    redirect: { destination: esSlugValido(slug) ? `/?v=${encodeURIComponent(slug)}` : "/", permanent: false },
+    redirect: { destination: esSlugValido(slug) ? `/app?v=${encodeURIComponent(slug)}` : "/", permanent: false },
   };
 }
 

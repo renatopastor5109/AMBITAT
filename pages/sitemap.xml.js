@@ -2,8 +2,7 @@
 export async function getServerSideProps({ req, res }) {
   const sitio = process.env.NEXT_PUBLIC_SITE_URL || `https://${req.headers.host}`;
   const paginas = [
-    ["/conoce", "1.0", "weekly"],
-    ["/", "0.8", "weekly"],
+    ["/", "1.0", "weekly"],
     ["/terminos", "0.3", "monthly"],
     ["/privacidad", "0.3", "monthly"],
   ];

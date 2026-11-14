@@ -4,7 +4,7 @@ import { esCodigoValido } from "../../lib/crecimiento";
 export async function getServerSideProps({ params }) {
   const codigo = String(params.codigo || "").toUpperCase();
   return {
-    redirect: { destination: esCodigoValido(codigo) ? `/?ref=${encodeURIComponent(codigo)}` : "/", permanent: false },
+    redirect: { destination: esCodigoValido(codigo) ? `/app?ref=${encodeURIComponent(codigo)}` : "/", permanent: false },
   };
 }
 

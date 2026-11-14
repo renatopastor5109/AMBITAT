@@ -174,8 +174,8 @@ export default async function handler(req, res) {
         metadata: { reservacion_id: reservacion.id },
         // Stripe cambia {CHECKOUT_SESSION_ID} por el número real del pago,
         // para que la app pueda mostrar el ticket.
-        success_url: `${origin}/?pago=exito&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/?pago=cancelado`,
+        success_url: `${origin}/app?pago=exito&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}/app?pago=cancelado`,
       });
 
       const { error: guardarSesionError } = await admin

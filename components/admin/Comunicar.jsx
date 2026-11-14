@@ -6,9 +6,9 @@ import { MAX_TEXTO_ANUNCIO, MAX_TITULO_PUSH, MAX_TEXTO_PUSH, HORAS_ENTRE_AVISOS 
 
 const DESTINOS = [
   ["", "Sin botón"],
-  ["/?ir=tienda", "Reservar mantenimiento (Tienda)"],
-  ["/?ir=camara", "Tomar foto a una planta"],
-  ["/?ir=comunidad", "Comunidad"],
+  ["/app?ir=tienda", "Reservar mantenimiento (Tienda)"],
+  ["/app?ir=camara", "Tomar foto a una planta"],
+  ["/app?ir=comunidad", "Comunidad"],
   ["/conoce", "Página de presentación"],
   ["otro", "Otro enlace (https://...)"],
 ];

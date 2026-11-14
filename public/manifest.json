@@ -3,7 +3,7 @@
   "short_name": "Ámbitat",
   "description": "Cuida tus plantas, una foto a la vez.",
   "lang": "es-MX",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "background_color": "#EAC468",

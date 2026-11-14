@@ -132,6 +132,32 @@ html, body {
 @keyframes brotesEsqueleto { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .brotes-esqueleto { animation: none; } }
 /* Solo esta zona se desplaza; la barra de pestañas se queda fija abajo */
+@view-transition { navigation: auto; }
+/* Cada pantalla entra deslizándose desde el lado al que vas */
+.brotes-vista {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.brotes-vista[data-dir="adelante"] { animation: brotesVistaAdelante 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.brotes-vista[data-dir="atras"] { animation: brotesVistaAtras 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.brotes-vista[data-dir="funde"] { animation: brotesAparece 0.25s ease both; }
+@keyframes brotesVistaAdelante { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes brotesVistaAtras { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.brotes-nav-pastilla {
+  position: absolute;
+  border-radius: 16px;
+  background: #3F5D3E;
+  box-shadow: 0 6px 14px -8px rgba(40, 64, 42, 0.7);
+  transition: left 0.42s cubic-bezier(0.3, 1.25, 0.5, 1), top 0.42s cubic-bezier(0.3, 1.25, 0.5, 1), opacity 0.2s;
+}
+.brotes-shell button { -webkit-tap-highlight-color: transparent; }
+.brotes-shell button:not(:disabled):active { filter: brightness(0.96); }
+@media (prefers-reduced-motion: reduce) {
+  .brotes-vista[data-dir] { animation: none; }
+  .brotes-nav-pastilla { transition: none; }
+}
 .brotes-scroll {
   flex: 1;
   min-height: 0;
@@ -310,16 +336,54 @@ html, body {
   }
 }
 
+/* Computadora: la app se vuelve una web completa con menú lateral */
+@media (min-width: 900px) {
+  html, body, .brotes-root { background: #EAC468; }
+  .brotes-shell {
+    max-width: none;
+    height: 100vh;
+    height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .brotes-shell.con-nav {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-rows: 100%;
+  }
+  .brotes-shell.con-nav > .brotes-lateral { grid-column: 1; grid-row: 1; }
+  .brotes-shell.con-nav > .brotes-scroll { grid-column: 2; grid-row: 1; }
+  .brotes-shell.con-nav > .brotes-scroll-shade { left: 260px; }
+  .brotes-lateral {
+    display: flex;
+    flex-direction: column;
+    padding: 30px 18px 26px;
+    background: rgba(245, 239, 221, 0.55);
+    border-right: 1px solid rgba(34, 28, 19, 0.08);
+    overflow-y: auto;
+  }
+  .brotes-vista {
+    width: 100%;
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: 12px 24px 40px;
+    box-sizing: border-box;
+  }
+}
+
 /* Pantallas grandes: aprovecha el ancho extra con más columnas en el jardín */
 @media (min-width: 1080px) {
-  .brotes-shell {
-    max-width: 900px;
-  }
   .brotes-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .brotes-tip-img {
     max-width: 200px !important;
+  }
+}
+@media (min-width: 1360px) {
+  .brotes-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 `;
@@ -2731,42 +2795,85 @@ function DetalleReservacion({ r, fechasReservables, diasLlenos, libresDias, hora
   );
 }
 
-// ---------- Nav inferior flotante ----------
-function BottomNav({ screen, setScreen, gardenCount }) {
+// ---------- Navegación: barra abajo en celular, menú lateral en computadora ----------
+const ORDEN_VISTAS = { jardin: 0, detalle: 0.5, camera: 1, fotos: 1.2, analyzing: 1.4, result: 1.6, comunidad: 2, tienda: 3, cuenta: 4, sugerencias: 4.5 };
+
+function useEsEscritorio() {
+  const [es, setEs] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 900px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 900px)");
+    if (!mq) return;
+    const cambio = () => setEs(mq.matches);
+    cambio();
+    mq.addEventListener ? mq.addEventListener("change", cambio) : mq.addListener(cambio);
+    return () => (mq.removeEventListener ? mq.removeEventListener("change", cambio) : mq.removeListener(cambio));
+  }, []);
+  return es;
+}
+
+function BottomNav({ screen, setScreen, gardenCount, escritorio }) {
   const items = [
-    {
-      key: "jardin",
-      active: screen === "jardin",
-      onClick: () => setScreen("jardin"),
-      icon: Icon.Leaf,
-      label: `Jardín${gardenCount ? ` (${gardenCount})` : ""}`,
-    },
-    {
-      key: "camera",
-      active: screen === "camera" || screen === "fotos" || screen === "analyzing" || screen === "result",
-      onClick: () => setScreen("camera"),
-      icon: Icon.Camera,
-      label: "Cámara",
-    },
-    {
-      key: "comunidad",
-      active: screen === "comunidad",
-      onClick: () => setScreen("comunidad"),
-      icon: Icon.MapPin,
-      label: "Comunidad",
-    },
-    {
-      key: "tienda",
-      active: screen === "tienda",
-      onClick: () => setScreen("tienda"),
-      icon: Icon.Cart,
-      label: "Tienda",
-    },
+    { key: "jardin", active: screen === "jardin", icon: Icon.Leaf, label: escritorio ? "Mi jardín" : `Jardín${gardenCount ? ` (${gardenCount})` : ""}`, extra: escritorio && gardenCount ? gardenCount : null },
+    { key: "camera", active: ["camera", "fotos", "analyzing", "result"].includes(screen), icon: Icon.Camera, label: escritorio ? "Escanear planta" : "Cámara" },
+    { key: "comunidad", active: screen === "comunidad", icon: Icon.MapPin, label: "Comunidad" },
+    { key: "tienda", active: screen === "tienda", icon: Icon.Cart, label: escritorio ? "Mantenimiento" : "Tienda" },
   ];
+  const activo = items.findIndex((x) => x.active);
+  const F = "'Inter', sans-serif";
+
+  if (escritorio) {
+    const ALTO = 48;
+    const SEP = 6;
+    return (
+      <nav aria-label="Secciones" className="brotes-lateral">
+        <a href="/conoce" aria-label="Ámbitat, conoce más" style={{ display: "block", padding: "0 10px", marginBottom: 30 }}>
+          <img src="/logo.png" alt="Ámbitat" style={{ height: 34, width: "auto", display: "block" }} />
+        </a>
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: SEP }}>
+          <span
+            aria-hidden="true"
+            className="brotes-nav-pastilla"
+            style={{ left: 0, right: 0, height: ALTO, top: Math.max(0, activo) * (ALTO + SEP), opacity: activo < 0 ? 0 : 1 }}
+          />
+          {items.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setScreen(item.key)}
+              aria-current={item.active ? "page" : undefined}
+              style={{ position: "relative", zIndex: 1, height: ALTO, display: "flex", alignItems: "center", gap: 12, padding: "0 14px", border: "none", borderRadius: 14, background: "transparent", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 15, color: item.active ? "#fff" : C.ink, textAlign: "left", transition: "color .25s" }}
+            >
+              <item.icon style={{ width: 20, height: 20, flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.extra ? <span style={{ fontSize: 12.5, fontWeight: 800, opacity: 0.7 }}>{item.extra}</span> : null}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setScreen("cuenta")}
+          aria-current={screen === "cuenta" ? "page" : undefined}
+          style={{ display: "flex", alignItems: "center", gap: 12, height: 46, padding: "0 14px", border: "none", borderRadius: 14, background: screen === "cuenta" ? C.tileBg : "transparent", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, textAlign: "left" }}
+        >
+          <Icon.User style={{ width: 19, height: 19 }} /> Mi cuenta
+        </button>
+        <button
+          onClick={() => setScreen("sugerencias")}
+          style={{ display: "flex", alignItems: "center", gap: 12, height: 46, padding: "0 14px", border: "none", borderRadius: 14, background: screen === "sugerencias" ? C.tileBg : "transparent", cursor: "pointer", fontFamily: F, fontWeight: 700, fontSize: 14.5, color: C.ink, textAlign: "left" }}
+        >
+          <Icon.Info style={{ width: 19, height: 19 }} /> Escríbenos
+        </button>
+        <a href="/conoce" style={{ display: "block", padding: "12px 14px 0", fontFamily: F, fontSize: 13, color: C.inkSoft, fontWeight: 600 }}>
+          Qué es Ámbitat
+        </a>
+      </nav>
+    );
+  }
+
   return (
     <nav
       aria-label="Secciones"
       style={{
+        position: "relative",
         display: "flex",
         flexShrink: 0,
         alignItems: "stretch",
@@ -2780,12 +2887,26 @@ function BottomNav({ screen, setScreen, gardenCount }) {
         WebkitBackdropFilter: "blur(20px)",
       }}
     >
+      {/* La pastilla verde se desliza al botón activo */}
+      <span
+        aria-hidden="true"
+        className="brotes-nav-pastilla"
+        style={{
+          top: 8,
+          bottom: 6,
+          left: `calc(6px + ${Math.max(0, activo)} * ((100% - 8px) / ${items.length}))`,
+          width: `calc((100% - 8px) / ${items.length} - 4px)`,
+          opacity: activo < 0 ? 0 : 1,
+        }}
+      />
       {items.map((item) => (
         <button
           key={item.key}
-          onClick={item.onClick}
+          onClick={() => setScreen(item.key)}
           aria-current={item.active ? "page" : undefined}
           style={{
+            position: "relative",
+            zIndex: 1,
             flex: 1,
             display: "flex",
             flexDirection: "column",
@@ -2794,26 +2915,16 @@ function BottomNav({ screen, setScreen, gardenCount }) {
             gap: 2,
             margin: "0 2px",
             borderRadius: 16,
-            background: item.active ? C.green : "transparent",
+            background: "transparent",
             border: "none",
             padding: "7px 0",
             cursor: "pointer",
             color: item.active ? "#fff" : "#7d7258",
-            transition: "background 0.2s ease, color 0.2s ease",
+            transition: "color 0.25s ease",
           }}
         >
           <item.icon style={{ width: 19, height: 19 }} />
-          <span
-            style={{
-              fontFamily: "'Inter', sans-serif",
-              fontWeight: 600,
-              fontSize: 11,
-              color: item.active ? "#fff" : "#7d7258",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {item.label}
-          </span>
+          <span style={{ fontFamily: F, fontWeight: 600, fontSize: 11, color: "inherit", whiteSpace: "nowrap" }}>{item.label}</span>
         </button>
       ))}
     </nav>
@@ -2821,6 +2932,13 @@ function BottomNav({ screen, setScreen, gardenCount }) {
 }
 
 export default function BrotesApp() {
+  const escritorio = useEsEscritorio();
+  // Este navegador ya usa la app: la próxima vez "/" abre la app directo.
+  useEffect(() => {
+    try {
+      document.cookie = "ambitat_app=1; Max-Age=31536000; Path=/; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "");
+    } catch {}
+  }, []);
   const [screen, setScreen] = useState("jardin");
   const scrollRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
@@ -3425,8 +3543,8 @@ export default function BrotesApp() {
   function abrirEnlaceAnuncio() {
     const e = anuncio?.enlace;
     if (!e) return;
-    if (e.startsWith("/?ir=")) {
-      const ir = new URLSearchParams(e.slice(1)).get("ir");
+    if (e.startsWith("/?ir=") || e.startsWith("/app?ir=")) {
+      const ir = new URLSearchParams(e.slice(e.indexOf("?"))).get("ir");
       if (ir === "tienda" || ir === "comunidad") setScreen(ir);
       else if (ir === "camara") openCamera("new");
       return;
@@ -4202,13 +4320,23 @@ export default function BrotesApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePlant?.id, !!activePlant?.ficha]);
 
+  // ---------- Transición entre pantallas (hacia dónde se desliza) ----------
+  const vistaKey = screen === "jardin" && activePlant ? "detalle" : screen;
+  const ordenVista = ORDEN_VISTAS[vistaKey] ?? 0;
+  const vistaPrevia = useRef({ key: vistaKey, orden: ordenVista, dir: "nada" });
+  if (vistaPrevia.current.key !== vistaKey) {
+    const antes = vistaPrevia.current.orden;
+    vistaPrevia.current = { key: vistaKey, orden: ordenVista, dir: ordenVista > antes ? "adelante" : ordenVista < antes ? "atras" : "funde" };
+  }
+  const vistaDir = vistaPrevia.current.dir;
+
   return (
     <div className="brotes-root" lang="es" style={{ display: "flex", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS_IMPORT}</style>
       <IntroAnimada />
       {primeraVez && <PrimeraVez onTerminar={terminarPrimeraVez} />}
       {pasosInstalar && <PasosInstalar plataforma={plataforma} onCerrar={() => setPasosInstalar(false)} />}
-      <div className="brotes-shell">
+      <div className={"brotes-shell" + (authEstado === "lista" ? " con-nav" : "")}>
         {authEstado !== "lista" ? (
           <div className="brotes-scroll">
             <PantallaCuenta estado={authEstado} esAnonimo={false} onReintentar={reintentarCarga} errorInicial={errorCuenta} />
@@ -4253,6 +4381,7 @@ export default function BrotesApp() {
             if (arriba !== scrolled) setScrolled(arriba);
           }}
         >
+        <div key={vistaKey} className="brotes-vista" data-dir={vistaDir}>
         {/* ---------------- CAMERA ---------------- */}
         {screen === "camera" && (
           <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", background: C.dark, margin: 16, borderRadius: 26, overflow: "hidden" }}>
@@ -4563,7 +4692,7 @@ export default function BrotesApp() {
                 >
                   Mi jardín
                 </h1>
-                <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto", flexShrink: 0 }} />
+                {!escritorio && <img src="/logo.png" alt="Ámbitat" style={{ height: 30, width: "auto", flexShrink: 0 }} />}
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
                 <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13.5, color: C.inkSoft, margin: 0 }}>
@@ -5768,6 +5897,7 @@ export default function BrotesApp() {
         )}
 
         </div>
+        </div>
 
         {ticket && authEstado === "lista" && <TicketPago
             datos={ticket}
@@ -5879,6 +6009,7 @@ export default function BrotesApp() {
 
         {authEstado === "lista" && (
         <BottomNav
+          escritorio={escritorio}
           screen={screen}
           setScreen={(s) => {
             if (s !== screen) analisisIdRef.current++; // salir de la pantalla cancela el análisis en curso

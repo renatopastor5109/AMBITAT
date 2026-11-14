@@ -47,9 +47,29 @@ Después de agregar o cambiar una variable hay que hacer **Redeploy**.
 
 Los archivos `supabase-*.sql` crean las tablas y las reglas de seguridad.
 Todos se pueden volver a correr sin problema. El más reciente es
-`supabase-revision-4.sql` (viveros aliados con QR, "Invita a un amigo" y
-créditos). Antes de ese, en orden: `supabase-revision-2.sql` y
-`supabase-revision-3.sql` (agenda configurable y cancelaciones justas).
+`supabase-revision-6.sql` (notas de clientes, buzón y notificaciones desde el
+panel). Antes de ese, en orden: `supabase-revision-5.sql` (Espacios), `supabase-revision-2.sql`, `supabase-revision-3.sql` (agenda
+configurable y cancelaciones justas) y `supabase-revision-4.sql` (viveros
+aliados con QR, "Invita a un amigo" y créditos).
+
+## Páginas
+
+- `/`: una sola entrada. Quien llega por primera vez (y Google) ve la página de presentación con una demo de la app; quien ya usa la app entra directo (cookie `ambitat_app`).
+- `/app`: la app siempre (botones "Abrir la app", ícono instalado, QR, pagos).
+- `/conoce`: la página de presentación aunque ya uses la app.
+- En computadora la app tiene menú lateral; en celular, barra abajo. Las pantallas entran deslizándose.
+
+## Panel /admin
+
+- **Inicio**: visitas de hoy, dinero del mes, personas nuevas, uso de la app y plantas más comunes.
+- **Calendario / Próximas / Historial**: tus citas.
+- **Clientes**: quién te ha pagado, sus datos, sus citas y tus notas privadas.
+- **Comunicar**: anuncio arriba en la app y notificación a todos (máx. una cada 12 h).
+- **Buzón**: mensajes que te mandan desde la app y nombres que la gente corrige a la IA.
+- **Servicio**: pausar reservaciones, precios, zonas y agenda.
+- **Crecer**: viveros con QR e invitaciones. **Ajustes**: qué falta configurar.
+
+Enlaces a una sección de la app (para anuncios y notificaciones): `/?ir=tienda`, `/?ir=camara`, `/?ir=comunidad`.
 
 ## Crecimiento
 
